@@ -83,7 +83,10 @@ rollback() {
     log "Deployment failed; rolling back to the previous image pair."
     if [[ -n "$PREVIOUS_CONFIG" ]]; then
       printf '%s\n' "$PREVIOUS_CONFIG" > "$DEPLOY_ENV"
-      dc up -d --no-deps panel-agent panel-core cloudflared || true
+      dc up -d --no-deps panel-agent panel-core || true
+      if [[ -s "$APP_DIR/.tunnel-token" ]]; then
+        dc up -d --no-deps cloudflared || true
+      fi
     else
       rm -f "$DEPLOY_ENV"
       log "No previous deployment state exists; inspect the containers manually."
@@ -105,10 +108,17 @@ chmod 600 "$DEPLOY_ENV"
 
 log "Starting production services and waiting for health checks."
 dc config --quiet
-dc up -d --remove-orphans --wait --wait-timeout "$READY_TIMEOUT" panel-init panel-agent panel-core cloudflared
+dc up -d --remove-orphans --wait --wait-timeout "$READY_TIMEOUT" panel-init panel-agent panel-core
 
 [[ "$(health_status panel-agent)" == "healthy" ]] || die "panel-agent failed its health check"
 [[ "$(health_status panel-core)" == "healthy" ]] || die "panel-core failed its health check"
+
+if [[ -s "$APP_DIR/.tunnel-token" ]]; then
+  log "Starting cloudflared ingress tunnel."
+  dc up -d --no-deps cloudflared || true
+else
+  log "Notice: $APP_DIR/.tunnel-token is empty. Add Cloudflare Tunnel token to start ingress."
+fi
 
 if [[ -n "$PREVIOUS_STATE" ]]; then
   printf '%s\n' "$PREVIOUS_STATE" > "$PREVIOUS_IMAGES_STATE"
