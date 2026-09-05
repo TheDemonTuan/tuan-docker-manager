@@ -52,6 +52,7 @@ type Stack struct {
 	Name              string          `json:"name"`
 	Status            StackStatus     `json:"status"`
 	Path              string          `json:"path"`
+	WorkingDir        string          `json:"working_dir,omitempty"`
 	ComposeFile       string          `json:"compose_file,omitempty"`
 	ComposeContent    string          `json:"compose_content"`
 	EnvContent        string          `json:"env_content"`

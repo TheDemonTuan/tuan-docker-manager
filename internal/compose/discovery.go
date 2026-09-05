@@ -106,6 +106,7 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 					Name:          c.StackName,
 					Status:        models.StackStatusStopped,
 					Path:          workingDir,
+					WorkingDir:    workingDir,
 					ComposeFile:   configFile,
 					IsSystem:      c.StackName == "docker-panel",
 					SecurityScore: 100,
@@ -115,6 +116,15 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 				}
 				stackMap[c.StackName] = st
 				stacks = append(stacks, st)
+			}
+			if st.WorkingDir == "" {
+				st.WorkingDir = c.WorkingDir
+			}
+			if st.Path == "" {
+				st.Path = c.WorkingDir
+			}
+			if st.ComposeFile == "" {
+				st.ComposeFile = c.ComposeFile
 			}
 			st.Containers = append(st.Containers, c)
 		}
