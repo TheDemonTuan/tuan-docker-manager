@@ -1,0 +1,94 @@
+services:
+  # Cloudflare Tunnel - Exposes panel via Cloudflare Zero Trust (Zero Public Ports)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: panel-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - panel-edge
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # Panel Core - API backend and Embedded React UI
+  # Security Rule: NEVER mounts /var/run/docker.sock. No public ports published.
+  panel-core:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.core
+    image: docker-panel-core:latest
+    container_name: panel-core
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - panel-edge
+    environment:
+      - LISTEN_ADDR=:8080
+      - DEV_MODE=${DEV_MODE:-false}
+      - DB_PATH=/data/panel.db
+      - MASTER_KEY_PATH=/data/secrets/master.key
+      - STACKS_ROOT=/srv/docker-panel/stacks
+      - BACKUP_DIR=/data/backups
+      - AGENT_SOCKET_URL=/run/panel-agent/agent.sock
+      - ALLOWED_EMAILS=${ALLOWED_EMAILS:-admin@example.com}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+    volumes:
+      - panel-data:/data
+      - agent-socket:/run/panel-agent
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      - panel-agent
+
+  # Panel Agent - Communicates with Docker Engine exclusively.
+  # Security Rule: network_mode is none. Communicates with Core only via Unix Domain Socket.
+  panel-agent:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.agent
+    image: docker-panel-agent:latest
+    container_name: panel-agent
+    restart: unless-stopped
+    network_mode: none
+    environment:
+      - SOCKET_PATH=/run/panel-agent/agent.sock
+      - STACKS_ROOT=/srv/docker-panel/stacks
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      # Docker daemon socket (AGENT ONLY)
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Stacks root directory confined to /srv/docker-panel
+      - /srv/docker-panel:/srv/docker-panel
+      # Host metrics inspection
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      # Shared Unix socket IPC with panel-core
+      - agent-socket:/run/panel-agent
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=128M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  panel-data:
+    name: panel-data
+  agent-socket:
+    name: agent-socket
+
+networks:
+  panel-edge:
+    name: panel-edge
+    internal: false

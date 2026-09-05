@@ -1,0 +1,16 @@
+# Build Go Panel Agent Binary
+FROM golang:1.24-alpine AS go-builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal/ ./internal/
+COPY cmd/panel-agent/main.go ./cmd/panel-agent/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/panel-agent ./cmd/panel-agent
+
+# Agent Runtime with Docker CLI & Compose
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates docker-cli docker-cli-compose
+
+COPY --from=go-builder /bin/panel-agent /bin/panel-agent
+
+ENTRYPOINT ["/bin/panel-agent"]

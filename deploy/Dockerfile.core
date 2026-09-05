@@ -1,0 +1,28 @@
+# Build React Web UI
+FROM node:20-alpine AS web-builder
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm install
+COPY web/ ./
+RUN npm run build
+
+# Build Go Panel Core Binary
+FROM golang:1.24-alpine AS go-builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal/ ./internal/
+COPY cmd/panel-core/main.go ./cmd/panel-core/
+COPY --from=web-builder /app/cmd/panel-core/webdist ./cmd/panel-core/webdist
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/panel-core ./cmd/panel-core
+
+# Minimal Production Runtime
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+RUN addgroup -g 10001 -S panel && adduser -u 10001 -S panel -G panel
+USER panel:panel
+
+COPY --from=go-builder /bin/panel-core /bin/panel-core
+
+EXPOSE 8080
+ENTRYPOINT ["/bin/panel-core"]

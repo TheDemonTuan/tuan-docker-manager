@@ -1,0 +1,14 @@
+# Cloudflare Tunnel Configuration
+# Used when running cloudflared locally or as a service
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: /etc/cloudflared/cert.json
+
+ingress:
+  # Internal Docker network or localhost routing
+  - hostname: panel.example.com
+    service: http://panel-core:8080
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 10s
+  # Catch-all rule (returns HTTP 404 for unmatched hosts)
+  - service: http_status:404
