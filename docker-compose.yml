@@ -86,6 +86,7 @@ services:
       - AGENT_SOCKET_GID=10001
       - STACKS_ROOT=/srv/docker-panel/stacks
       - DOCKER_HOST=unix:///var/run/docker.sock
+      - HOST_ROOT=/host/root
     volumes:
       # Docker daemon socket (AGENT ONLY)
       - /var/run/docker.sock:/var/run/docker.sock
@@ -94,6 +95,7 @@ services:
       # Host metrics inspection
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      - /:/host/root:ro
       # Shared Unix socket IPC with panel-core
       - agent-socket:/run/panel-agent
     read_only: true

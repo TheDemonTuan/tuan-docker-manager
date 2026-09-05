@@ -49,7 +49,7 @@ export const App: React.FC = () => {
           {currentTab === 'stacks' && (
             <Stacks selectedStackId={selectedStackId} onClearSelected={() => setSelectedStackId(null)} />
           )}
-          {currentTab === 'containers' && <Containers />}
+          {currentTab === 'containers' && <Containers onNavigateStack={handleNavigateStack} />}
           {(currentTab === 'images' || currentTab === 'volumes' || currentTab === 'networks') && <Resources />}
           {currentTab === 'metrics' && <MetricsView />}
           {(currentTab === 'events' || currentTab === 'audit') && <EventsAudit />}

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"docker-panel/internal/agent"
-	"docker-panel/internal/compose"
 	"docker-panel/internal/models"
 )
 
@@ -41,20 +40,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		gpuMetrics = &models.GPUMetrics{Available: false}
 	}
 
-	// 3. Stacks from DB
-	stacks, _ := s.db.GetAllStacks()
-	if stacks == nil {
-		stacks = make([]*models.Stack, 0)
-	}
-
 	// 4. Containers from Agent
 	containers, err := s.agentClient.ListContainers(ctx, agent.ListContainersRequest{All: true})
 	if err != nil {
 		containers = make([]models.ContainerInfo, 0)
 	}
 
-	// Correlate containers to stacks
-	compose.MatchContainersToStacks(stacks, containers)
+	// 3. Stacks synchronized from DB and discovered containers
+	stacks, _ := s.syncDiscoveredStacks(ctx, containers)
+	if stacks == nil {
+		stacks = make([]*models.Stack, 0)
+	}
 
 	runningContainers := 0
 	stoppedContainers := 0

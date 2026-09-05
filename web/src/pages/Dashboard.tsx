@@ -313,7 +313,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-slate-400 font-mono truncate max-w-xs">{stk.path}</div>
+                        <div className="text-xs text-slate-400 font-mono truncate max-w-xs">{stk.working_dir || stk.path}</div>
                       </td>
 
                       <td className="px-6 py-4">

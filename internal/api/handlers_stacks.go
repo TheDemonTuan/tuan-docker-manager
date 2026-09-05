@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,19 +31,47 @@ type UpdateComposeRequest struct {
 	Message        string `json:"message,omitempty"`
 }
 
+func (s *Server) syncDiscoveredStacks(ctx context.Context, containers []models.ContainerInfo) ([]*models.Stack, error) {
+	dbStacks, err := s.db.GetAllStacks()
+	if err != nil {
+		dbStacks = make([]*models.Stack, 0)
+	}
+
+	stacks := compose.MatchContainersToStacks(dbStacks, containers)
+
+	for _, st := range stacks {
+		if st.ComposeContent == "" && st.ComposeFile != "" {
+			content, exists, err := s.agentClient.ReadFile(ctx, st.ComposeFile)
+			if err == nil && exists {
+				st.ComposeContent = content
+			}
+		}
+		if st.DockerfileContent == "" && st.Path != "" {
+			dfPath := filepath.Join(st.Path, "Dockerfile")
+			content, exists, err := s.agentClient.ReadFile(ctx, dfPath)
+			if err == nil && exists {
+				st.DockerfileContent = content
+			}
+		}
+		if st.SecurityScore == 0 && st.ComposeContent != "" && s.scanner != nil {
+			report, err := s.scanner.Scan(st.ComposeContent, st.Path)
+			if err == nil && report != nil {
+				st.SecurityScore = report.Score
+			}
+		}
+		_ = s.db.UpsertStack(st)
+	}
+
+	return stacks, nil
+}
+
 func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
-	stacks, err := s.db.GetAllStacks()
+	containers, _ := s.agentClient.ListContainers(r.Context(), agent.ListContainersRequest{All: true})
+	stacks, err := s.syncDiscoveredStacks(r.Context(), containers)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if stacks == nil {
-		stacks = make([]*models.Stack, 0)
-	}
-
-	// Correlate with running containers
-	containers, _ := s.agentClient.ListContainers(r.Context(), agent.ListContainersRequest{All: true})
-	compose.MatchContainersToStacks(stacks, containers)
 
 	writeJSON(w, http.StatusOK, stacks)
 }
@@ -125,9 +154,31 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, stack)
 }
 
+func (s *Server) getOrFindStack(ctx context.Context, id string) (*models.Stack, error) {
+	st, err := s.db.GetStackByID(id)
+	if err == nil && st != nil {
+		return st, nil
+	}
+	// Try without prefix or by name
+	trimmed := strings.TrimPrefix(id, "stk_")
+	st, err = s.db.GetStackByName(trimmed)
+	if err == nil && st != nil {
+		return st, nil
+	}
+	// Try sync from running containers
+	containers, _ := s.agentClient.ListContainers(ctx, agent.ListContainersRequest{All: true})
+	stacks, _ := s.syncDiscoveredStacks(ctx, containers)
+	for _, stack := range stacks {
+		if stack.ID == id || stack.Name == trimmed || stack.Name == id {
+			return stack, nil
+		}
+	}
+	return nil, fmt.Errorf("stack not found")
+}
+
 func (s *Server) handleGetStack(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stack, err := s.db.GetStackByID(id)
+	stack, err := s.getOrFindStack(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "stack not found")
 		return
@@ -153,7 +204,7 @@ func (s *Server) handleDeleteStack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	stack, err := s.db.GetStackByID(id)
+	stack, err := s.getOrFindStack(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "stack not found")
 		return
@@ -184,15 +235,18 @@ func (s *Server) handleDeleteStack(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetStackCompose(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stack, err := s.db.GetStackByID(id)
+	stack, err := s.getOrFindStack(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "stack not found")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"compose_content": stack.ComposeContent,
-		"env_content":     stack.EnvContent,
+		"compose_content":    stack.ComposeContent,
+		"env_content":        stack.EnvContent,
+		"dockerfile_content": stack.DockerfileContent,
+		"compose_file":       stack.ComposeFile,
+		"path":               stack.Path,
 	})
 }
 
@@ -204,7 +258,7 @@ func (s *Server) handleUpdateStackCompose(w http.ResponseWriter, r *http.Request
 	}
 
 	id := r.PathValue("id")
-	stack, err := s.db.GetStackByID(id)
+	stack, err := s.getOrFindStack(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "stack not found")
 		return
@@ -328,7 +382,7 @@ func (s *Server) handleComposeJob(w http.ResponseWriter, r *http.Request, jobTyp
 	}
 
 	id := r.PathValue("id")
-	stack, err := s.db.GetStackByID(id)
+	stack, err := s.getOrFindStack(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "stack not found")
 		return
@@ -355,7 +409,7 @@ func (s *Server) handleComposeJob(w http.ResponseWriter, r *http.Request, jobTyp
 
 func (s *Server) handleStackSecurity(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stack, err := s.db.GetStackByID(id)
+	stack, err := s.getOrFindStack(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "stack not found")
 		return

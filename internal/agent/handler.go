@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -56,6 +57,7 @@ func (h *AgentHandler) Router() http.Handler {
 	// Compose
 	mux.HandleFunc("POST /actions/compose/action", h.handleComposeAction)
 	mux.HandleFunc("POST /actions/compose/discover", h.handleDiscoverStacks)
+	mux.HandleFunc("POST /actions/compose/read-file", h.handleReadFile)
 
 	// Images
 	mux.HandleFunc("POST /actions/images/list", h.handleListImages)
@@ -294,7 +296,7 @@ func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	logs, err := h.composeRun.Execute(r.Context(), req.StackName, action, req.RemoveVolumes)
+	logs, err := h.composeRun.ExecuteInDir(r.Context(), req.StackName, req.StackPath, action, req.RemoveVolumes)
 	if err != nil {
 		writeJSON(w, http.StatusOK, ComposeActionResponse{
 			Success: false,
@@ -307,6 +309,62 @@ func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, ComposeActionResponse{
 		Success: true,
 		Logs:    logs,
+	})
+}
+
+func (h *AgentHandler) handleReadFile(w http.ResponseWriter, r *http.Request) {
+	var req ReadFileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("path is required"))
+		return
+	}
+
+	target := req.Path
+	hostRoot := os.Getenv("HOST_ROOT")
+	if hostRoot == "" {
+		hostRoot = "/host/root"
+	}
+
+	// Try target path directly first
+	info, err := os.Stat(target)
+	if os.IsNotExist(err) || (err == nil && info.IsDir()) {
+		// Try via hostRoot
+		alt := filepath.Join(hostRoot, target)
+		if info2, err2 := os.Stat(alt); err2 == nil && !info2.IsDir() {
+			target = alt
+			err = nil
+		} else if !filepath.IsAbs(req.Path) {
+			// Try via stacks root
+			alt2 := filepath.Join(h.composeRun.StacksRoot(), req.Path)
+			if info3, err3 := os.Stat(alt2); err3 == nil && !info3.IsDir() {
+				target = alt2
+				err = nil
+			}
+		}
+	}
+
+	if err != nil {
+		writeJSON(w, http.StatusOK, ReadFileResponse{Exists: false})
+		return
+	}
+
+	// Cap at 2MB
+	f, err := os.Open(target)
+	if err != nil {
+		writeJSON(w, http.StatusOK, ReadFileResponse{Exists: false, Error: err.Error()})
+		return
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, 2*1024*1024))
+	if err != nil {
+		writeJSON(w, http.StatusOK, ReadFileResponse{Exists: false, Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ReadFileResponse{
+		Content: string(data),
+		Exists:  true,
 	})
 }
 

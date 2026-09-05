@@ -167,6 +167,14 @@ func (c *Client) DiscoverStacks(ctx context.Context) ([]compose.DiscoveredStack,
 	return resp.Stacks, nil
 }
 
+func (c *Client) ReadFile(ctx context.Context, path string) (string, bool, error) {
+	var resp ReadFileResponse
+	if err := c.doJSON(ctx, "POST", "http://agent/actions/compose/read-file", ReadFileRequest{Path: path}, &resp); err != nil {
+		return "", false, err
+	}
+	return resp.Content, resp.Exists, nil
+}
+
 func (c *Client) ListImages(ctx context.Context, all bool) ([]models.ImageInfo, error) {
 	var resp ListImagesResponse
 	if err := c.doJSON(ctx, "POST", "http://agent/actions/images/list", ListImagesRequest{All: all}, &resp); err != nil {

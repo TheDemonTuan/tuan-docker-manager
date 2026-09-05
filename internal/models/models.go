@@ -48,17 +48,19 @@ const (
 )
 
 type Stack struct {
-	ID             string          `json:"id"`
-	Name           string          `json:"name"`
-	Status         StackStatus     `json:"status"`
-	Path           string          `json:"path"`
-	ComposeContent string          `json:"compose_content"`
-	EnvContent     string          `json:"env_content"`
-	SecurityScore  int             `json:"security_score"`
-	IsSystem       bool            `json:"is_system"`
-	Containers     []ContainerInfo `json:"containers,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID                string          `json:"id"`
+	Name              string          `json:"name"`
+	Status            StackStatus     `json:"status"`
+	Path              string          `json:"path"`
+	ComposeFile       string          `json:"compose_file,omitempty"`
+	ComposeContent    string          `json:"compose_content"`
+	EnvContent        string          `json:"env_content"`
+	DockerfileContent string          `json:"dockerfile_content,omitempty"`
+	SecurityScore     int             `json:"security_score"`
+	IsSystem          bool            `json:"is_system"`
+	Containers        []ContainerInfo `json:"containers,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
 }
 
 type StackRevision struct {
@@ -94,6 +96,8 @@ type ContainerInfo struct {
 	Labels      map[string]string `json:"labels"`
 	StackName   string            `json:"stack_name,omitempty"`
 	ServiceName string            `json:"service_name,omitempty"`
+	ComposeFile string            `json:"compose_file,omitempty"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
 	Health      string            `json:"health,omitempty"`
 }
 

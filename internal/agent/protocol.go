@@ -111,3 +111,13 @@ type ListNetworksResponse struct {
 type DeleteNetworkRequest struct {
 	ID string `json:"id"`
 }
+
+type ReadFileRequest struct {
+	Path string `json:"path"`
+}
+
+type ReadFileResponse struct {
+	Content string `json:"content"`
+	Exists  bool   `json:"exists"`
+	Error   string `json:"error,omitempty"`
+}

@@ -26,11 +26,12 @@ interface StacksProps {
 export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected }) => {
   const [stacks, setStacks] = useState<Stack[]>([])
   const [activeStack, setActiveStack] = useState<Stack | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'compose' | 'containers' | 'revisions' | 'security'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'compose' | 'dockerfile' | 'containers' | 'revisions' | 'security'>('overview')
 
   // Edit compose state
   const [composeContent, setComposeContent] = useState('')
   const [envContent, setEnvContent] = useState('')
+  const [dockerfileContent, setDockerfileContent] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
@@ -77,9 +78,19 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
 
   const selectStack = async (stk: Stack) => {
     setActiveStack(stk)
-    setComposeContent(stk.compose_content)
+    setComposeContent(stk.compose_content || '')
     setEnvContent(stk.env_content || '')
+    setDockerfileContent(stk.dockerfile_content || '')
     setSaveFeedback(null)
+
+    try {
+      const cmp = await api.getStackCompose(stk.id)
+      if (cmp.compose_content) setComposeContent(cmp.compose_content)
+      if (cmp.env_content) setEnvContent(cmp.env_content)
+      if (cmp.dockerfile_content) setDockerfileContent(cmp.dockerfile_content)
+    } catch {
+      // ignore
+    }
 
     // Fetch security
     try {
@@ -312,7 +323,7 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                       {activeStack.status}
                     </span>
                   </div>
-                  <div className="text-xs text-slate-400 font-mono mt-0.5">{activeStack.path}</div>
+                  <div className="text-xs text-slate-400 font-mono mt-0.5">{activeStack.working_dir || activeStack.path}</div>
                 </div>
 
                 {/* Operations Bar */}
@@ -382,18 +393,30 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
               )}
 
               {/* Tabs */}
-              <div className="flex border-b border-slate-800 bg-slate-950/20 px-4 text-xs font-medium text-slate-400">
-                {(['overview', 'compose', 'containers', 'security', 'revisions'] as const).map((tab) => (
+              <div className="flex border-b border-slate-800 bg-slate-950/20 px-4 text-xs font-medium text-slate-400 overflow-x-auto">
+                {[
+                  { id: 'overview' as const, label: 'Overview' },
+                  { id: 'compose' as const, label: 'Compose YAML' },
+                  { id: 'dockerfile' as const, label: 'Dockerfile', badge: dockerfileContent ? 'Found' : undefined },
+                  { id: 'containers' as const, label: `Containers (${activeStack.containers?.length || 0})` },
+                  { id: 'security' as const, label: `Security (${securityReport?.score || activeStack.security_score})` },
+                  { id: 'revisions' as const, label: 'Revisions' },
+                ].map((t) => (
                   <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`py-3 px-4 border-b-2 transition-all capitalize ${
-                      activeTab === tab
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`py-3 px-4 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                      activeTab === t.id
                         ? 'border-cyan-400 text-cyan-400 font-semibold'
                         : 'border-transparent hover:text-slate-200'
                     }`}
                   >
-                    {tab === 'security' ? `Security (${securityReport?.score || activeStack.security_score})` : tab}
+                    <span>{t.label}</span>
+                    {t.badge && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">
+                        {t.badge}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -403,6 +426,22 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                 {/* 1. Overview */}
                 {activeTab === 'overview' && (
                   <div className="space-y-4">
+                    <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800 space-y-2">
+                      <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                        Stack Location & Compose Files
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-500 block text-[11px]">Working Directory:</span>
+                          <span className="font-mono text-cyan-400 break-all">{activeStack.working_dir || activeStack.path}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[11px]">Compose File:</span>
+                          <span className="font-mono text-slate-300 break-all">{activeStack.compose_file || 'compose.yaml'}</span>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
                         <div className="text-xs text-slate-400">Security Score</div>
@@ -518,6 +557,41 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                         {saving ? 'Saving...' : 'Save & Validate'}
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {/* 2.5. Dockerfile Viewer */}
+                {activeTab === 'dockerfile' && (
+                  <div className="space-y-3 flex flex-col h-full">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-slate-300 font-medium flex items-center gap-2">
+                        <span>Dockerfile</span>
+                        <span className="text-[11px] text-cyan-400 font-mono">
+                          {activeStack.working_dir ? `${activeStack.working_dir}/Dockerfile` : 'Dockerfile'}
+                        </span>
+                      </div>
+                      {dockerfileContent && (
+                        <button
+                          onClick={() => navigator.clipboard.writeText(dockerfileContent)}
+                          className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 font-mono"
+                        >
+                          Copy
+                        </button>
+                      )}
+                    </div>
+
+                    {dockerfileContent ? (
+                      <pre className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-100 overflow-auto leading-relaxed max-h-[600px] whitespace-pre">
+                        {dockerfileContent}
+                      </pre>
+                    ) : (
+                      <div className="text-xs text-slate-400 text-center py-12 bg-slate-950/40 rounded-lg border border-slate-800/60">
+                        <p className="font-semibold text-slate-300 mb-1">No Dockerfile Found</p>
+                        <p className="text-slate-500">
+                          This stack uses pre-built Docker images directly or no Dockerfile was detected in the project directory.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

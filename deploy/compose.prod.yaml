@@ -64,11 +64,13 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
       HOST_PROC: /host/proc
       HOST_SYS: /host/sys
+      HOST_ROOT: /host/root
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${STACKS_HOST_PATH:-/srv/docker-panel/stacks}:/srv/docker-panel/stacks
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      - /:/host/root:ro
       - agent-socket:/run/panel-agent
     read_only: true
     tmpfs:

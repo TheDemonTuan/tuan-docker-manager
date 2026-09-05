@@ -69,7 +69,13 @@ export const api = {
       headers: confirmed ? { 'X-Critical-Confirm': '1' } : {},
     }),
   getStackCompose: (id: string) =>
-    request<{ compose_content: string; env_content: string }>(`/api/v1/stacks/${id}/compose`),
+    request<{
+      compose_content: string
+      env_content: string
+      dockerfile_content?: string
+      compose_file?: string
+      path?: string
+    }>(`/api/v1/stacks/${id}/compose`),
   updateStackCompose: (id: string, data: { compose_content: string; env_content?: string; message?: string }) =>
     request<{ stack: Stack; revision: StackRevision; security: SecurityReport }>(`/api/v1/stacks/${id}/compose`, {
       method: 'PUT',
@@ -101,6 +107,13 @@ export const api = {
   containerAction: (id: string, action: 'start' | 'stop' | 'restart' | 'kill') =>
     request<{ success: boolean }>(`/api/v1/containers/${id}/${action}`, { method: 'POST' }),
   getContainerStats: (id: string) => request<ContainerStats>(`/api/v1/containers/${id}/stats`),
+  getContainerLogsSSE: (id: string, tail = 100, follow = true) => {
+    return new EventSource(`/api/v1/containers/${id}/logs?tail=${tail}&follow=${follow}`)
+  },
+  getContainerTerminalWS: (id: string) => {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return new WebSocket(`${proto}//${window.location.host}/api/v1/containers/${id}/terminal`)
+  },
 
   // Images
   listImages: () => request<ImageInfo[]>('/api/v1/images'),

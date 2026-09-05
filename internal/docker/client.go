@@ -164,6 +164,8 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 
 		stackName := raw.Labels["com.docker.compose.project"]
 		serviceName := raw.Labels["com.docker.compose.service"]
+		composeFile := raw.Labels["com.docker.compose.project.config_files"]
+		workingDir := raw.Labels["com.docker.compose.project.working_dir"]
 
 		result = append(result, models.ContainerInfo{
 			ID:          raw.ID,
@@ -178,6 +180,8 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 			Labels:      raw.Labels,
 			StackName:   stackName,
 			ServiceName: serviceName,
+			ComposeFile: composeFile,
+			WorkingDir:  workingDir,
 		})
 	}
 

@@ -144,9 +144,25 @@ func (r *Runner) ReadStackFiles(name string) (composeContent string, envContent 
 }
 
 func (r *Runner) Execute(ctx context.Context, name string, action string, removeVolumes bool) (string, error) {
-	dir, err := r.GetStackDir(name)
-	if err != nil {
-		return "", err
+	return r.ExecuteInDir(ctx, name, "", action, removeVolumes)
+}
+
+func (r *Runner) ExecuteInDir(ctx context.Context, name string, customDir string, action string, removeVolumes bool) (string, error) {
+	dir := customDir
+	if dir == "" {
+		var err error
+		dir, err = r.GetStackDir(name)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	hostRoot := os.Getenv("HOST_ROOT")
+	if _, err := os.Stat(dir); os.IsNotExist(err) && hostRoot != "" {
+		alt := filepath.Join(hostRoot, dir)
+		if _, err := os.Stat(alt); err == nil {
+			dir = alt
+		}
 	}
 
 	var args []string

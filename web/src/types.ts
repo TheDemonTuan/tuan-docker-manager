@@ -34,6 +34,8 @@ export interface ContainerInfo {
   labels: Record<string, string>
   stack_name?: string
   service_name?: string
+  compose_file?: string
+  working_dir?: string
   health?: string
 }
 
@@ -73,8 +75,11 @@ export interface Stack {
   name: string
   status: 'running' | 'stopped' | 'partial' | 'unknown'
   path: string
+  compose_file?: string
+  working_dir?: string
   compose_content: string
   env_content: string
+  dockerfile_content?: string
   security_score: number
   is_system: boolean
   containers?: ContainerInfo[]

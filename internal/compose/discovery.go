@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"docker-panel/internal/models"
 )
@@ -81,7 +82,7 @@ func DiscoverStacks(stacksRoot string) ([]DiscoveredStack, error) {
 	return results, nil
 }
 
-func MatchContainersToStacks(stacks []*models.Stack, containers []models.ContainerInfo) {
+func MatchContainersToStacks(stacks []*models.Stack, containers []models.ContainerInfo) []*models.Stack {
 	stackMap := make(map[string]*models.Stack)
 	for _, s := range stacks {
 		s.Containers = make([]models.ContainerInfo, 0)
@@ -90,9 +91,32 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 
 	for _, c := range containers {
 		if c.StackName != "" {
-			if s, ok := stackMap[c.StackName]; ok {
-				s.Containers = append(s.Containers, c)
+			st, ok := stackMap[c.StackName]
+			if !ok {
+				workingDir := c.WorkingDir
+				if workingDir == "" {
+					workingDir = c.Labels["com.docker.compose.project.working_dir"]
+				}
+				configFile := c.ComposeFile
+				if configFile == "" {
+					configFile = c.Labels["com.docker.compose.project.config_files"]
+				}
+				st = &models.Stack{
+					ID:            "stk_" + c.StackName,
+					Name:          c.StackName,
+					Status:        models.StackStatusStopped,
+					Path:          workingDir,
+					ComposeFile:   configFile,
+					IsSystem:      c.StackName == "docker-panel",
+					SecurityScore: 100,
+					Containers:    make([]models.ContainerInfo, 0),
+					CreatedAt:     time.Unix(c.Created, 0),
+					UpdatedAt:     time.Now(),
+				}
+				stackMap[c.StackName] = st
+				stacks = append(stacks, st)
 			}
+			st.Containers = append(st.Containers, c)
 		}
 	}
 
@@ -115,4 +139,5 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 			s.Status = models.StackStatusStopped
 		}
 	}
+	return stacks
 }
