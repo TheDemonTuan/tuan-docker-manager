@@ -22,7 +22,7 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   echo "Created $APP_DIR/.env. Replace every placeholder before the first deployment."
 fi
 if [[ ! -f "$APP_DIR/.tunnel-token" ]]; then
-  install -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0600 /dev/null "$APP_DIR/.tunnel-token"
+  install -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0644 /dev/null "$APP_DIR/.tunnel-token"
   echo "Created $APP_DIR/.tunnel-token. Put only the Cloudflare Tunnel token in this file."
 fi
 

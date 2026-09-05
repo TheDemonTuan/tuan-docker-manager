@@ -67,7 +67,7 @@ command -v flock >/dev/null || die "flock is required"
 [[ -f "$APP_ENV" ]] || die "$APP_ENV is missing"
 chmod 600 "$APP_ENV"
 if [[ -f "$APP_DIR/.tunnel-token" ]]; then
-  chmod 600 "$APP_DIR/.tunnel-token"
+  chmod 644 "$APP_DIR/.tunnel-token"
 fi
 mkdir -p "$APP_DIR"
 
