@@ -85,10 +85,13 @@ func (h *AgentHandler) Router() http.Handler {
 func (h *AgentHandler) handlePing(w http.ResponseWriter, r *http.Request) {
 	hostname, _ := os.Hostname()
 	dockerVer := "unknown"
-	if v, err := h.dockerClient.GetVersion(r.Context()); err == nil {
-		if verStr, ok := v["Version"].(string); ok {
-			dockerVer = verStr
-		}
+	v, err := h.dockerClient.GetVersion(r.Context())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("docker engine unavailable: %w", err))
+		return
+	}
+	if verStr, ok := v["Version"].(string); ok {
+		dockerVer = verStr
 	}
 
 	writeJSON(w, http.StatusOK, PingResponse{

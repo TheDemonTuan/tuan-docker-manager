@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	"docker-panel/internal/agent"
 	"docker-panel/internal/alerts"
@@ -61,6 +63,7 @@ func NewServer(
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", s.handleHealth)
 
 	// API Subrouter
 	apiMux := http.NewServeMux()
@@ -166,6 +169,21 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	return mux
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := s.db.PingContext(ctx); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	if _, err := s.agentClient.Ping(ctx); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "agent unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

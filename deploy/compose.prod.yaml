@@ -1,0 +1,149 @@
+name: docker-panel
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.3
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    depends_on:
+      panel-core:
+        condition: service_healthy
+    command: tunnel --no-autoupdate run --token-file /run/secrets/tunnel-token
+    secrets:
+      - tunnel-token
+    networks:
+      - panel-edge
+    read_only: true
+    pids_limit: 100
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  panel-init:
+    image: alpine:3.21
+    restart: "no"
+    command: >
+      sh -c "mkdir -p /data/secrets /data/backups && chown -R 10001:10001 /data && chmod 700 /data /data/secrets /data/backups"
+    volumes:
+      - panel-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+
+  panel-agent:
+    image: ${PANEL_AGENT_IMAGE:-ghcr.io/thedemontuan/tuan-docker-manager-agent:latest}
+    restart: unless-stopped
+    init: true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    network_mode: none
+    environment:
+      SOCKET_PATH: /run/panel-agent/agent.sock
+      AGENT_SOCKET_GID: "10001"
+      STACKS_ROOT: /srv/docker-panel/stacks
+      DOCKER_HOST: unix:///var/run/docker.sock
+      HOST_PROC: /host/proc
+      HOST_SYS: /host/sys
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${STACKS_HOST_PATH:-/srv/docker-panel/stacks}:/srv/docker-panel/stacks
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - agent-socket:/run/panel-agent
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    healthcheck:
+      test: ["CMD", "/bin/panel-agent", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  panel-core:
+    image: ${PANEL_CORE_IMAGE:-ghcr.io/thedemontuan/tuan-docker-manager-core:latest}
+    restart: unless-stopped
+    init: true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    expose:
+      - "8080"
+    networks:
+      - panel-edge
+    environment:
+      LISTEN_ADDR: :8080
+      DEV_MODE: "false"
+      DB_PATH: /data/panel.db
+      MASTER_KEY_PATH: /data/secrets/master.key
+      STACKS_ROOT: /srv/docker-panel/stacks
+      BACKUP_DIR: /data/backups
+      AGENT_SOCKET_URL: /run/panel-agent/agent.sock
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:?ALLOWED_EMAILS is required}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is required}
+    volumes:
+      - panel-data:/data
+      - agent-socket:/run/panel-agent
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      panel-init:
+        condition: service_completed_successfully
+      panel-agent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/panel-core", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+networks:
+  panel-edge:
+    driver: bridge
+
+secrets:
+  tunnel-token:
+    file: ./.tunnel-token
+
+volumes:
+  panel-data:
+  agent-socket:

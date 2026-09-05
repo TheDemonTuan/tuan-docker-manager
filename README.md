@@ -221,6 +221,12 @@ The test suite validates:
 
 ---
 
-## 7. License
+## 7. Automated production deployment
+
+Production deployment follows the same GHCR + immutable digest + SSH model used by the owner's other VPS applications. A push to `main` tests the project, builds both images, publishes them to GHCR, and deploys them as one versioned pair with health checks and automatic rollback.
+
+See [`deploy/README.md`](deploy/README.md) for first-time VPS bootstrap, GitHub Environment secrets, Cloudflare setup, status checks, and manual rollback.
+
+## 8. License
 
 MIT License.

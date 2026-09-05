@@ -120,6 +120,19 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	return server, cleanup
 }
 
+func TestAPI_Health(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected health endpoint status 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestAPI_AuthMe(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()

@@ -5,8 +5,10 @@ import (
 	"embed"
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,6 +37,7 @@ var embeddedWebFS embed.FS
 var Version = "0.1.0-mvp"
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "Check panel core readiness")
 	listenAddr := flag.String("listen", getEnv("LISTEN_ADDR", ":8080"), "Panel core listen address")
 	agentSocket := flag.String("agent-socket", getEnv("AGENT_SOCKET_URL", "/run/panel-agent/agent.sock"), "Agent socket URL (unix://path or tcp://addr)")
 	dbPath := flag.String("db", getEnv("DB_PATH", "./panel.db"), "Path to SQLite database")
@@ -45,6 +48,20 @@ func main() {
 	adminEmail := flag.String("admin-email", getEnv("ADMIN_EMAIL", "admin@example.com"), "Initial admin email")
 	devMode := flag.Bool("dev", getEnv("DEV_MODE", "true") == "true", "Enable development mode")
 	flag.Parse()
+
+	if *healthcheck {
+		addr := *listenAddr
+		if _, port, err := net.SplitHostPort(addr); err == nil {
+			addr = ":" + port
+		} else if !strings.HasPrefix(addr, ":") {
+			addr = ":" + addr
+		}
+		if err := checkHealth("http://127.0.0.1" + addr + "/healthz"); err != nil {
+			log.Printf("[panel-core] Healthcheck failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	log.Printf("[panel-core] Starting version %s...", Version)
 	log.Printf("[panel-core] Listening on %s (DevMode: %v)", *listenAddr, *devMode)
@@ -233,6 +250,19 @@ func startEventsSubscriber(ctx context.Context, client *agent.Client, bus *event
 			}
 		}
 	}()
+}
+
+func checkHealth(url string) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func getEnv(key, def string) string {

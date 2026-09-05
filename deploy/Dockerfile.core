@@ -1,20 +1,21 @@
 # Build React Web UI
 FROM node:20-alpine AS web-builder
 WORKDIR /app/web
-COPY web/package*.json ./
-RUN npm install
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
 COPY web/ ./
 RUN npm run build
 
 # Build Go Panel Core Binary
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.27-alpine AS go-builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY internal/ ./internal/
 COPY cmd/panel-core/main.go ./cmd/panel-core/
 COPY --from=web-builder /app/cmd/panel-core/webdist ./cmd/panel-core/webdist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/panel-core ./cmd/panel-core
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o /bin/panel-core ./cmd/panel-core
 
 # Minimal Production Runtime
 FROM alpine:3.21

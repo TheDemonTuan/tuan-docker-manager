@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 var Version = "0.1.0-mvp"
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "Check panel agent readiness")
 	socketURL := flag.String("socket", getEnv("AGENT_SOCKET_URL", getEnv("SOCKET_PATH", "/run/panel-agent/agent.sock")), "Agent listen socket URL (unix://path or tcp://addr)")
 	dockerHost := getEnv("DOCKER_SOCKET_PATH", getEnv("DOCKER_HOST", "/var/run/docker.sock"))
 	dockerHost = strings.TrimPrefix(dockerHost, "unix://")
@@ -34,6 +36,14 @@ func main() {
 	procPath := flag.String("host-proc", getEnv("HOST_PROC", "/host/proc"), "Host proc filesystem path")
 	sysPath := flag.String("host-sys", getEnv("HOST_SYS", "/host/sys"), "Host sys filesystem path")
 	flag.Parse()
+
+	if *healthcheck {
+		if err := checkAgentHealth(*socketURL); err != nil {
+			log.Printf("[panel-agent] Healthcheck failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	log.Printf("[panel-agent] Starting version %s...", Version)
 	log.Printf("[panel-agent] Socket: %s (GID: %d)", *socketURL, *socketGID)
@@ -115,6 +125,30 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	log.Printf("[panel-agent] Stopped.")
+}
+
+func checkAgentHealth(socketURL string) error {
+	transport := &http.Transport{}
+	if strings.HasPrefix(socketURL, "tcp://") {
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", strings.TrimPrefix(socketURL, "tcp://"))
+		}
+	} else {
+		path := strings.TrimPrefix(socketURL, "unix://")
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", path)
+		}
+	}
+	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+	resp, err := client.Get("http://agent/ping")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func getEnv(key, def string) string {

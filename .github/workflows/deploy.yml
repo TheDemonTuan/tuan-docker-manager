@@ -1,0 +1,209 @@
+name: Build and Deploy
+run-name: ${{ inputs.skip_deploy && 'Build images only' || 'Build → GHCR → VPS' }}
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_deploy:
+        description: Build and publish without deploying
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: tuan-docker-manager-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.x"
+  NODE_VERSION: "24"
+
+jobs:
+  verify:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify Go
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l .)"
+          go test ./...
+          go vet ./...
+      - name: Verify web
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Verify deployment scripts
+        run: |
+          bash -n deploy/deploy.sh deploy/bootstrap-vps.sh
+          bash deploy/test-deploy.sh
+
+  images:
+    name: Build ${{ matrix.name }} → GHCR
+    needs: verify
+    runs-on: ${{ vars.BUILD_RUNNER || 'ubuntu-24.04-arm' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: core
+            dockerfile: deploy/Dockerfile.core
+          - name: agent
+            dockerfile: deploy/Dockerfile.agent
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image name
+        id: meta
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SERVICE: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner_lc}/tuan-docker-manager-${SERVICE}" >> "$GITHUB_OUTPUT"
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: ${{ vars.DEPLOY_PLATFORM || 'linux/arm64' }}
+          build-args: VERSION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Save immutable image reference
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SERVICE: ${{ matrix.name }}
+        run: |
+          mkdir -p digests
+          printf '%s@%s\n' "$IMAGE" "$DIGEST" > "digests/$SERVICE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.1
+        with:
+          name: digest-${{ matrix.name }}
+          path: digests/${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    name: Deploy to VPS
+    needs: [verify, images]
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_deploy) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.9
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Sync deployment files
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" 'mkdir -p /opt/tuan-docker-manager'
+          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" -o BatchMode=yes \
+            deploy/compose.prod.yaml deploy/deploy.sh deploy/image-retention.sh \
+            "$VPS_USER@$VPS_HOST:/opt/tuan-docker-manager/"
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" 'chmod 755 /opt/tuan-docker-manager/deploy.sh /opt/tuan-docker-manager/image-retention.sh'
+      - name: Log VPS in to GHCR
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" \
+            -o BatchMode=yes "$VPS_USER@$VPS_HOST" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+      - name: Deploy immutable image pair
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          core_ref="$(cat digests/core)"
+          agent_ref="$(cat digests/agent)"
+          printf 'Deploying core %s and agent %s\n' "$core_ref" "$agent_ref"
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "/opt/tuan-docker-manager/deploy.sh '$core_ref' '$agent_ref'"
+      - name: Report deployment status
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" '/opt/tuan-docker-manager/deploy.sh --status' || true
+      - name: Remove ephemeral GHCR credentials
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" 'docker logout ghcr.io' || true
