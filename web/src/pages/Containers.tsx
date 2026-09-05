@@ -62,6 +62,15 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
 
   // Stats state
   const [stats, setStats] = useState<ContainerStats | null>(null)
+  const [allStats, setAllStats] = useState<Record<string, ContainerStats>>({})
+
+  const formatBytes = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  }
 
   const loadContainers = async () => {
     try {
@@ -74,9 +83,24 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
     }
   }
 
+  const loadAllStats = async () => {
+    try {
+      const res = await api.getAllContainerStats()
+      if (res) {
+        setAllStats(res)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     loadContainers()
-    const timer = setInterval(loadContainers, 5000)
+    loadAllStats()
+    const timer = setInterval(() => {
+      loadContainers()
+      loadAllStats()
+    }, 4000)
     return () => clearInterval(timer)
   }, [])
 
@@ -323,6 +347,15 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
               const workingDir = firstWithDir?.working_dir || ''
               const composeFile = firstWithDir?.compose_file || ''
 
+              const totalCpu = grpContainers.reduce((acc, c) => {
+                const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                return acc + (s?.cpu_percent || 0)
+              }, 0)
+              const totalMem = grpContainers.reduce((acc, c) => {
+                const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                return acc + (s?.memory_used || 0)
+              }, 0)
+
               return (
                 <div
                   key={grpKey}
@@ -343,7 +376,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-bold text-slate-100 text-base">
                             {isStandalone ? 'Standalone Containers' : grpKey}
                           </span>
@@ -358,6 +391,16 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                           >
                             {runningCount}/{grpContainers.length} running
                           </span>
+                          {runningCount > 0 && (
+                            <>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-medium bg-cyan-950/60 text-cyan-300 border border-cyan-800/60 flex items-center gap-1">
+                                <span className="text-cyan-400">⚡</span> {totalCpu.toFixed(1)}% CPU
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/60 flex items-center gap-1">
+                                <span className="text-indigo-400">💾</span> {formatBytes(totalMem)} RAM
+                              </span>
+                            </>
+                          )}
                           {grpKey === 'docker-panel' && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono">
                               SYSTEM

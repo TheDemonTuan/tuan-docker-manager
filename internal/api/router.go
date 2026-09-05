@@ -93,6 +93,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Containers
 	apiMux.HandleFunc("GET /api/v1/containers", s.handleListContainers)
+	apiMux.HandleFunc("GET /api/v1/containers/stats-all", s.handleAllContainerStats)
 	apiMux.HandleFunc("GET /api/v1/containers/{id}", s.handleGetContainer)
 	apiMux.HandleFunc("POST /api/v1/containers/{id}/start", s.handleContainerStart)
 	apiMux.HandleFunc("POST /api/v1/containers/{id}/stop", s.handleContainerStop)

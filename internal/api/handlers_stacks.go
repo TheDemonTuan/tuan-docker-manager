@@ -53,7 +53,7 @@ func (s *Server) syncDiscoveredStacks(ctx context.Context, containers []models.C
 				st.DockerfileContent = content
 			}
 		}
-		if st.SecurityScore == 0 && st.ComposeContent != "" && s.scanner != nil {
+		if st.ComposeContent != "" && s.scanner != nil {
 			report, err := s.scanner.Scan(st.ComposeContent, st.Path)
 			if err == nil && report != nil {
 				st.SecurityScore = report.Score

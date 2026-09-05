@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import { Stack, StackRevision, SecurityReport, Job } from '../types'
+import { Stack, StackRevision, SecurityReport, Job, ContainerStats } from '../types'
 import {
   IconLayers,
   IconPlus,
@@ -52,6 +52,25 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
   const [newCompose, setNewCompose] = useState('version: "3.8"\nservices:\n  web:\n    image: nginx:1.27-alpine\n    ports:\n      - "127.0.0.1:8080:80"\n    restart: unless-stopped\n')
   const [newEnv, setNewEnv] = useState('')
 
+  const [allStats, setAllStats] = useState<Record<string, ContainerStats>>({})
+
+  const formatBytes = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  }
+
+  const loadAllStats = async () => {
+    try {
+      const res = await api.getAllContainerStats()
+      if (res) setAllStats(res)
+    } catch {
+      // ignore
+    }
+  }
+
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [isDownVOpen, setIsDownVOpen] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
@@ -74,6 +93,12 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
 
   useEffect(() => {
     loadStacks()
+    loadAllStats()
+    const timer = setInterval(() => {
+      loadStacks()
+      loadAllStats()
+    }, 4000)
+    return () => clearInterval(timer)
   }, [selectedStackId])
 
   const selectStack = async (stk: Stack) => {
@@ -256,6 +281,15 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
             {stacks.map((stk) => {
               const isSelected = activeStack?.id === stk.id
               const isRunning = stk.status === 'running'
+              const stkCpu = (stk.containers || []).reduce((acc, c) => {
+                const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                return acc + (s?.cpu_percent || 0)
+              }, 0)
+              const stkMem = (stk.containers || []).reduce((acc, c) => {
+                const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                return acc + (s?.memory_used || 0)
+              }, 0)
+
               return (
                 <div
                   key={stk.id}
@@ -286,6 +320,11 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
 
                   <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
                     <span>{stk.containers?.length || 0} containers</span>
+                    {isRunning && stkCpu > 0 && (
+                      <span className="font-mono text-[11px] text-cyan-300">
+                        ⚡ {stkCpu.toFixed(1)}% | 💾 {formatBytes(stkMem)}
+                      </span>
+                    )}
                     <span
                       className={`font-semibold ${
                         stk.security_score >= 80
@@ -424,83 +463,121 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
               {/* Tab Contents */}
               <div className="p-4 flex-1 overflow-y-auto space-y-4">
                 {/* 1. Overview */}
-                {activeTab === 'overview' && (
-                  <div className="space-y-4">
-                    <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800 space-y-2">
-                      <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                        Stack Location & Compose Files
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-slate-500 block text-[11px]">Working Directory:</span>
-                          <span className="font-mono text-cyan-400 break-all">{activeStack.working_dir || activeStack.path}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block text-[11px]">Compose File:</span>
-                          <span className="font-mono text-slate-300 break-all">{activeStack.compose_file || 'compose.yaml'}</span>
-                        </div>
-                      </div>
-                    </div>
+                {activeTab === 'overview' && (() => {
+                  const activeStackCpu = (activeStack.containers || []).reduce((acc, c) => {
+                    const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                    return acc + (s?.cpu_percent || 0)
+                  }, 0)
+                  const activeStackMem = (activeStack.containers || []).reduce((acc, c) => {
+                    const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                    return acc + (s?.memory_used || 0)
+                  }, 0)
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
-                        <div className="text-xs text-slate-400">Security Score</div>
-                        <div
-                          className={`text-2xl font-bold mt-1 ${
-                            activeStack.security_score >= 80
-                              ? 'text-emerald-400'
-                              : activeStack.security_score >= 50
-                              ? 'text-amber-400'
-                              : 'text-red-400'
-                          }`}
-                        >
-                          {activeStack.security_score} / 100
+                  return (
+                    <div className="space-y-4">
+                      <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800 space-y-2">
+                        <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                          Stack Location & Compose Files
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {activeStack.security_score >= 80 ? 'Production Ready' : 'Needs Hardening'}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 block text-[11px]">Working Directory:</span>
+                            <span className="font-mono text-cyan-400 break-all">{activeStack.working_dir || activeStack.path}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block text-[11px]">Compose File:</span>
+                            <span className="font-mono text-slate-300 break-all">{activeStack.compose_file || 'compose.yaml'}</span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
-                        <div className="text-xs text-slate-400">Revisions Created</div>
-                        <div className="text-2xl font-bold text-slate-100 mt-1">{revisions.length}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">Version history tracked</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                          <div className="text-xs text-slate-400">Security Score</div>
+                          <div
+                            className={`text-xl font-bold mt-1 ${
+                              activeStack.security_score >= 80
+                                ? 'text-emerald-400'
+                                : activeStack.security_score >= 50
+                                ? 'text-amber-400'
+                                : 'text-red-400'
+                            }`}
+                          >
+                            {activeStack.security_score} / 100
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {activeStack.security_score >= 80 ? 'Production Ready' : 'Needs Hardening'}
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                          <div className="text-xs text-slate-400">Containers</div>
+                          <div className="text-xl font-bold text-slate-100 mt-1">{activeStack.containers?.length || 0}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{activeStack.status}</div>
+                        </div>
+
+                        <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                          <div className="text-xs text-slate-400">Stack CPU</div>
+                          <div className="text-xl font-bold text-cyan-400 font-mono mt-1">
+                            ⚡ {activeStackCpu.toFixed(1)}%
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Live CPU usage</div>
+                        </div>
+
+                        <div className="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                          <div className="text-xs text-slate-400">Stack RAM</div>
+                          <div className="text-xl font-bold text-indigo-400 font-mono mt-1">
+                            💾 {formatBytes(activeStackMem)}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Live RAM usage</div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-slate-950/40 rounded-lg border border-slate-800">
+                        <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                          Containers in Stack
+                        </h4>
+                        {activeStack.containers && activeStack.containers.length > 0 ? (
+                          <div className="space-y-2">
+                            {activeStack.containers.map((c) => {
+                              const cs = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                              return (
+                                <div
+                                  key={c.id}
+                                  className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800 text-xs"
+                                >
+                                  <div>
+                                    <span className="font-semibold text-slate-200">{c.names.join(', ')}</span>
+                                    <span className="ml-2 font-mono text-[11px] text-slate-400">{c.image}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    {cs && c.state === 'running' && (
+                                      <div className="font-mono text-[11px] flex items-center gap-2">
+                                        <span className="text-cyan-400">⚡ {cs.cpu_percent.toFixed(1)}%</span>
+                                        <span className="text-indigo-400">💾 {formatBytes(cs.memory_used)}</span>
+                                      </div>
+                                    )}
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                                        c.state === 'running'
+                                          ? 'bg-emerald-950 text-emerald-400'
+                                          : 'bg-slate-800 text-slate-400'
+                                      }`}
+                                    >
+                                      {c.state}
+                                    </span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400">No active containers found for this stack.</div>
+                        )}
                       </div>
                     </div>
-
-                    <div className="p-4 bg-slate-950/40 rounded-lg border border-slate-800">
-                      <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                        Containers in Stack
-                      </h4>
-                      {activeStack.containers && activeStack.containers.length > 0 ? (
-                        <div className="space-y-2">
-                          {activeStack.containers.map((c) => (
-                            <div
-                              key={c.id}
-                              className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded border border-slate-800 text-xs"
-                            >
-                              <div>
-                                <span className="font-semibold text-slate-200">{c.names.join(', ')}</span>
-                                <span className="ml-2 font-mono text-[11px] text-slate-400">{c.image}</span>
-                              </div>
-                              <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                                  c.state === 'running'
-                                    ? 'bg-emerald-950 text-emerald-400'
-                                    : 'bg-slate-800 text-slate-400'
-                                }`}
-                              >
-                                {c.state}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-slate-400">No active containers found for this stack.</div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                  )
+                })()}
 
                 {/* 2. Compose Editor */}
                 {activeTab === 'compose' && (
@@ -599,27 +676,38 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                 {activeTab === 'containers' && (
                   <div className="space-y-3">
                     {activeStack.containers && activeStack.containers.length > 0 ? (
-                      activeStack.containers.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 flex items-center justify-between"
-                        >
-                          <div>
-                            <div className="font-semibold text-slate-200 text-sm">{c.names.join(', ')}</div>
-                            <div className="text-xs text-slate-400 font-mono mt-0.5">{c.image}</div>
-                            <div className="text-[11px] text-slate-400 mt-1">Status: {c.status}</div>
-                          </div>
+                      activeStack.containers.map((c) => {
+                        const cs = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                        return (
+                          <div
+                            key={c.id}
+                            className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 flex items-center justify-between"
+                          >
+                            <div>
+                              <div className="font-semibold text-slate-200 text-sm">{c.names.join(', ')}</div>
+                              <div className="text-xs text-slate-400 font-mono mt-0.5">{c.image}</div>
+                              <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-3">
+                                <span>Status: {c.status}</span>
+                                {cs && c.state === 'running' && (
+                                  <>
+                                    <span className="text-cyan-400 font-mono">⚡ {cs.cpu_percent.toFixed(1)}% CPU</span>
+                                    <span className="text-indigo-400 font-mono">💾 {formatBytes(cs.memory_used)} RAM</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
 
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => api.containerAction(c.id, 'restart').then(() => loadStacks())}
-                              className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700"
-                            >
-                              Restart
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => api.containerAction(c.id, 'restart').then(() => loadStacks())}
+                                className="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700"
+                              >
+                                Restart
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        )
+                      })
                     ) : (
                       <div className="text-xs text-slate-400 text-center py-6">
                         No containers currently running for this stack. Click "Up" to start services.

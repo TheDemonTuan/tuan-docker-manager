@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"docker-panel/internal/compose"
 	"docker-panel/internal/docker"
@@ -53,6 +54,7 @@ func (h *AgentHandler) Router() http.Handler {
 	mux.HandleFunc("POST /actions/containers/action", h.handleContainerAction)
 	mux.HandleFunc("GET /actions/containers/logs", h.handleContainerLogs)
 	mux.HandleFunc("POST /actions/containers/stats", h.handleContainerStats)
+	mux.HandleFunc("POST /actions/containers/stats-batch", h.handleBatchContainerStats)
 
 	// Compose
 	mux.HandleFunc("POST /actions/compose/action", h.handleComposeAction)
@@ -226,6 +228,56 @@ func (h *AgentHandler) handleContainerStats(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, ContainerStatsResponse{Stats: stats})
+}
+
+func (h *AgentHandler) handleBatchContainerStats(w http.ResponseWriter, r *http.Request) {
+	var req BatchContainerStatsRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	targetIDs := req.ContainerIDs
+	if len(targetIDs) == 0 {
+		// If no IDs provided, fetch running containers
+		ctrs, err := h.dockerClient.ListContainers(r.Context(), false)
+		if err == nil {
+			for _, c := range ctrs {
+				targetIDs = append(targetIDs, c.ID)
+			}
+		}
+	}
+
+	statsMap := make(map[string]*models.ContainerStats)
+	if len(targetIDs) == 0 {
+		writeJSON(w, http.StatusOK, BatchContainerStatsResponse{Stats: statsMap})
+		return
+	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	// Concurrently query container stats with bounded concurrency (up to 16 workers)
+	sem := make(chan struct{}, 16)
+
+	for _, cid := range targetIDs {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			st, err := h.dockerClient.GetContainerStats(r.Context(), id)
+			if err == nil && st != nil {
+				mu.Lock()
+				statsMap[id] = st
+				// Also key by short 12-char ID for convenience
+				if len(id) >= 12 {
+					statsMap[id[:12]] = st
+				}
+				mu.Unlock()
+			}
+		}(cid)
+	}
+
+	wg.Wait()
+	writeJSON(w, http.StatusOK, BatchContainerStatsResponse{Stats: statsMap})
 }
 
 func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Request) {

@@ -107,6 +107,7 @@ export const api = {
   containerAction: (id: string, action: 'start' | 'stop' | 'restart' | 'kill') =>
     request<{ success: boolean }>(`/api/v1/containers/${id}/${action}`, { method: 'POST' }),
   getContainerStats: (id: string) => request<ContainerStats>(`/api/v1/containers/${id}/stats`),
+  getAllContainerStats: () => request<Record<string, ContainerStats>>('/api/v1/containers/stats-all'),
   getContainerLogsSSE: (id: string, tail = 100, follow = true) => {
     return new EventSource(`/api/v1/containers/${id}/logs?tail=${tail}&follow=${follow}`)
   },

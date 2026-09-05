@@ -51,6 +51,14 @@ type ContainerStatsResponse struct {
 	Stats *models.ContainerStats `json:"stats"`
 }
 
+type BatchContainerStatsRequest struct {
+	ContainerIDs []string `json:"container_ids,omitempty"`
+}
+
+type BatchContainerStatsResponse struct {
+	Stats map[string]*models.ContainerStats `json:"stats"`
+}
+
 type ComposeActionRequest struct {
 	StackName      string `json:"stack_name"`
 	StackPath      string `json:"stack_path"`

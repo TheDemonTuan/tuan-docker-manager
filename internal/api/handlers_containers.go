@@ -91,6 +91,15 @@ func (s *Server) handleContainerStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+func (s *Server) handleAllContainerStats(w http.ResponseWriter, r *http.Request) {
+	statsMap, err := s.agentClient.BatchContainerStats(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, statsMap)
+}
+
 func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	follow := r.URL.Query().Get("follow") == "true"

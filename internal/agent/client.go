@@ -121,6 +121,17 @@ func (c *Client) ContainerStats(ctx context.Context, id string) (*models.Contain
 	return resp.Stats, nil
 }
 
+func (c *Client) BatchContainerStats(ctx context.Context, ids []string) (map[string]*models.ContainerStats, error) {
+	var resp BatchContainerStatsResponse
+	if err := c.doJSON(ctx, "POST", "http://agent/actions/containers/stats-batch", BatchContainerStatsRequest{ContainerIDs: ids}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Stats == nil {
+		return make(map[string]*models.ContainerStats), nil
+	}
+	return resp.Stats, nil
+}
+
 func (c *Client) StreamLogs(ctx context.Context, id string, follow bool, tail string, timestamps bool) (io.ReadCloser, error) {
 	v := url.Values{}
 	v.Set("id", id)

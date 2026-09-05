@@ -11,6 +11,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [allStats, setAllStats] = useState<Record<string, any>>({})
 
   const loadDashboard = async () => {
     try {
@@ -24,9 +25,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
     }
   }
 
+  const loadAllStats = async () => {
+    try {
+      const res = await api.getAllContainerStats()
+      if (res) setAllStats(res)
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     loadDashboard()
-    const timer = setInterval(loadDashboard, 5000)
+    loadAllStats()
+    const timer = setInterval(() => {
+      loadDashboard()
+      loadAllStats()
+    }, 4000)
     return () => clearInterval(timer)
   }, [])
 
@@ -281,6 +295,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
                 <th className="px-6 py-3">Stack</th>
                 <th className="px-6 py-3">Status</th>
                 <th className="px-6 py-3">Containers</th>
+                <th className="px-6 py-3">Resource Usage</th>
                 <th className="px-6 py-3">Security Score</th>
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
@@ -288,7 +303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
             <tbody className="divide-y divide-slate-800/60 text-sm">
               {stacks.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
                     No stacks discovered yet. Create or import your first Compose stack!
                   </td>
                 </tr>
@@ -297,6 +312,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
                   const isRunning = stk.status === 'running'
                   const isPartial = stk.status === 'partial'
                   const score = stk.security_score
+
+                  const stkCpu = (stk.containers || []).reduce((acc, c) => {
+                    const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                    return acc + (s?.cpu_percent || 0)
+                  }, 0)
+                  const stkMem = (stk.containers || []).reduce((acc, c) => {
+                    const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
+                    return acc + (s?.memory_used || 0)
+                  }, 0)
 
                   let scoreBadge = 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60'
                   if (score < 50) scoreBadge = 'text-red-400 bg-red-950/50 border-red-800/60'
@@ -337,6 +361,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateStack }) => {
 
                       <td className="px-6 py-4 text-slate-300 font-mono text-xs">
                         {stk.containers?.length || 0} container(s)
+                      </td>
+
+                      <td className="px-6 py-4">
+                        {isRunning || isPartial ? (
+                          <div className="flex items-center gap-2 font-mono text-xs">
+                            <span className="px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/60">
+                              ⚡ {stkCpu.toFixed(1)}% CPU
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-800/60">
+                              💾 {formatBytes(stkMem)} RAM
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-mono">—</span>
+                        )}
                       </td>
 
                       <td className="px-6 py-4">

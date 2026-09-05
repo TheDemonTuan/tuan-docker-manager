@@ -109,7 +109,7 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 					WorkingDir:    workingDir,
 					ComposeFile:   configFile,
 					IsSystem:      c.StackName == "docker-panel",
-					SecurityScore: 100,
+					SecurityScore: 0,
 					Containers:    make([]models.ContainerInfo, 0),
 					CreatedAt:     time.Unix(c.Created, 0),
 					UpdatedAt:     time.Now(),
