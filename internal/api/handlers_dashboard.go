@@ -10,11 +10,11 @@ import (
 )
 
 type DashboardResponse struct {
-	Host       *models.HostMetrics   `json:"host"`
-	GPU        *models.GPUMetrics    `json:"gpu"`
-	Stacks     []*models.Stack       `json:"stacks"`
+	Host       *models.HostMetrics    `json:"host"`
+	GPU        *models.GPUMetrics     `json:"gpu"`
+	Stacks     []*models.Stack        `json:"stacks"`
 	Containers []models.ContainerInfo `json:"containers"`
-	Summary    DashboardSummary      `json:"summary"`
+	Summary    DashboardSummary       `json:"summary"`
 }
 
 type DashboardSummary struct {

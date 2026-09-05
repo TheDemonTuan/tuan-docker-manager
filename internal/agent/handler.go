@@ -55,6 +55,7 @@ func (h *AgentHandler) Router() http.Handler {
 
 	// Compose
 	mux.HandleFunc("POST /actions/compose/action", h.handleComposeAction)
+	mux.HandleFunc("POST /actions/compose/discover", h.handleDiscoverStacks)
 
 	// Images
 	mux.HandleFunc("POST /actions/images/list", h.handleListImages)
@@ -236,6 +237,24 @@ func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Reques
 
 	action := strings.ToLower(req.Action)
 
+	// Delete action: compose down (with volumes if requested) + remove stack directory
+	if action == "delete" {
+		logs, _ := h.composeRun.Execute(r.Context(), req.StackName, "down", req.RemoveVolumes)
+		if err := h.composeRun.DeleteStackDir(req.StackName); err != nil {
+			writeJSON(w, http.StatusOK, ComposeActionResponse{
+				Success: false,
+				Logs:    logs,
+				Error:   err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, ComposeActionResponse{
+			Success: true,
+			Logs:    fmt.Sprintf("Stack %s deleted successfully\n%s", req.StackName, logs),
+		})
+		return
+	}
+
 	// Validate action
 	if action == "validate" {
 		if req.ComposeContent == "" {
@@ -286,6 +305,18 @@ func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Reques
 		Success: true,
 		Logs:    logs,
 	})
+}
+
+func (h *AgentHandler) handleDiscoverStacks(w http.ResponseWriter, r *http.Request) {
+	discovered, err := compose.DiscoverStacks(h.composeRun.StacksRoot())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if discovered == nil {
+		discovered = make([]compose.DiscoveredStack, 0)
+	}
+	writeJSON(w, http.StatusOK, DiscoverStacksResponse{Stacks: discovered})
 }
 
 func (h *AgentHandler) handleListImages(w http.ResponseWriter, r *http.Request) {

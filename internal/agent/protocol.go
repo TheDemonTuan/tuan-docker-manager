@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"docker-panel/internal/compose"
 	"docker-panel/internal/models"
 )
 
@@ -65,6 +66,10 @@ type ComposeActionResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+type DiscoverStacksResponse struct {
+	Stacks []compose.DiscoveredStack `json:"stacks"`
+}
+
 type ListImagesRequest struct {
 	All bool `json:"all"`
 }
@@ -98,7 +103,6 @@ type DeleteVolumeRequest struct {
 type PruneVolumesRequest struct {
 	All bool `json:"all"`
 }
-
 
 type ListNetworksResponse struct {
 	Networks []models.NetworkInfo `json:"networks"`

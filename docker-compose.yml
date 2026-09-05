@@ -14,6 +14,24 @@ services:
     cap_drop:
       - ALL
 
+  # Panel Data Init - Ensures named volume /data is properly owned by panel user (10001:10001)
+  panel-init:
+    image: alpine:3.21
+    container_name: panel-init
+    restart: "no"
+    command: >
+      sh -c "mkdir -p /data/secrets /data/backups && chown -R 10001:10001 /data && chmod 700 /data /data/secrets /data/backups"
+    volumes:
+      - panel-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+
   # Panel Core - API backend and Embedded React UI
   # Security Rule: NEVER mounts /var/run/docker.sock. No public ports published.
   panel-core:
@@ -48,7 +66,10 @@ services:
     cap_drop:
       - ALL
     depends_on:
-      - panel-agent
+      panel-agent:
+        condition: service_started
+      panel-init:
+        condition: service_completed_successfully
 
   # Panel Agent - Communicates with Docker Engine exclusively.
   # Security Rule: network_mode is none. Communicates with Core only via Unix Domain Socket.
@@ -62,6 +83,7 @@ services:
     network_mode: none
     environment:
       - SOCKET_PATH=/run/panel-agent/agent.sock
+      - AGENT_SOCKET_GID=10001
       - STACKS_ROOT=/srv/docker-panel/stacks
       - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
@@ -81,6 +103,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
 
 volumes:
   panel-data:

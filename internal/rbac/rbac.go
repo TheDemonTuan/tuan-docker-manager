@@ -7,15 +7,15 @@ import (
 )
 
 const (
-	PermViewDashboard   = "view:dashboard"
-	PermViewContainers  = "view:containers"
-	PermViewLogs        = "view:logs"
-	PermViewTerminal    = "view:terminal"
-	PermViewStats       = "view:stats"
-	PermViewCompose     = "view:compose"
-	PermViewEvents      = "view:events"
-	PermViewMetrics     = "view:metrics"
-	PermViewAudit       = "view:audit"
+	PermViewDashboard  = "view:dashboard"
+	PermViewContainers = "view:containers"
+	PermViewLogs       = "view:logs"
+	PermViewTerminal   = "view:terminal"
+	PermViewStats      = "view:stats"
+	PermViewCompose    = "view:compose"
+	PermViewEvents     = "view:events"
+	PermViewMetrics    = "view:metrics"
+	PermViewAudit      = "view:audit"
 
 	PermContainerAction = "action:container" // start, stop, restart
 	PermContainerKill   = "action:container_kill"
@@ -23,20 +23,20 @@ const (
 	PermComposeRestart  = "action:compose_restart"
 	PermComposePull     = "action:compose_pull"
 
-	PermComposeEdit     = "manage:compose_edit"
-	PermComposeCreate   = "manage:compose_create"
-	PermComposeBuild    = "manage:compose_build"
-	PermManageImages    = "manage:images"
-	PermManageNetworks  = "manage:networks"
-	PermManageVolumes   = "manage:volumes"
+	PermComposeEdit    = "manage:compose_edit"
+	PermComposeCreate  = "manage:compose_create"
+	PermComposeBuild   = "manage:compose_build"
+	PermManageImages   = "manage:images"
+	PermManageNetworks = "manage:networks"
+	PermManageVolumes  = "manage:volumes"
 
-	PermVolumeDelete    = "admin:volume_delete"
-	PermComposeDownV    = "admin:compose_down_v"
-	PermSystemPrune     = "admin:system_prune"
-	PermManageSecrets   = "admin:secrets"
-	PermManageSettings  = "admin:settings"
-	PermManageUsers     = "admin:users"
-	PermManageBackups   = "admin:backups"
+	PermVolumeDelete   = "admin:volume_delete"
+	PermComposeDownV   = "admin:compose_down_v"
+	PermSystemPrune    = "admin:system_prune"
+	PermManageSecrets  = "admin:secrets"
+	PermManageSettings = "admin:settings"
+	PermManageUsers    = "admin:users"
+	PermManageBackups  = "admin:backups"
 )
 
 var rolePermissions = map[models.Role]map[string]bool{
@@ -52,15 +52,15 @@ var rolePermissions = map[models.Role]map[string]bool{
 	},
 	models.RoleOperator: {
 		// Inherits Viewer
-		PermViewDashboard:   true,
-		PermViewContainers:  true,
-		PermViewLogs:        true,
-		PermViewTerminal:    true,
-		PermViewStats:       true,
-		PermViewCompose:     true,
-		PermViewEvents:      true,
-		PermViewMetrics:     true,
-		PermViewAudit:       true,
+		PermViewDashboard:  true,
+		PermViewContainers: true,
+		PermViewLogs:       true,
+		PermViewTerminal:   true,
+		PermViewStats:      true,
+		PermViewCompose:    true,
+		PermViewEvents:     true,
+		PermViewMetrics:    true,
+		PermViewAudit:      true,
 		// Operator actions
 		PermContainerAction: true,
 		PermComposeUp:       true,
@@ -84,12 +84,12 @@ var rolePermissions = map[models.Role]map[string]bool{
 		PermComposeRestart:  true,
 		PermComposePull:     true,
 		// Admin actions
-		PermComposeEdit:     true,
-		PermComposeCreate:   true,
-		PermComposeBuild:    true,
-		PermManageImages:    true,
-		PermManageNetworks:  true,
-		PermManageVolumes:   true,
+		PermComposeEdit:    true,
+		PermComposeCreate:  true,
+		PermComposeBuild:   true,
+		PermManageImages:   true,
+		PermManageNetworks: true,
+		PermManageVolumes:  true,
 	},
 	models.RoleOwner: {
 		// All permissions
@@ -142,4 +142,3 @@ func ParseRole(roleStr string) models.Role {
 		return models.RoleViewer
 	}
 }
-

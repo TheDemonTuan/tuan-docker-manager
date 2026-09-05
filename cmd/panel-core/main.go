@@ -40,7 +40,7 @@ func main() {
 	dbPath := flag.String("db", getEnv("DB_PATH", "./panel.db"), "Path to SQLite database")
 	keyPath := flag.String("key", getEnv("MASTER_KEY_PATH", "./secrets/master.key"), "Path to master encryption key")
 	stacksRoot := flag.String("stacks-root", getEnv("STACKS_ROOT", "/srv/docker-panel/stacks"), "Compose stacks root directory")
-	backupDir := flag.String("backup-dir", getEnv("BACKUP_DIR", "/srv/docker-panel/backups"), "Backup storage directory")
+	backupDir := flag.String("backup-dir", getEnv("BACKUP_DIR", "/data/backups"), "Backup storage directory")
 	allowedEmails := flag.String("allowed-emails", getEnv("ALLOWED_EMAILS", ""), "Comma-separated list of allowed user emails")
 	adminEmail := flag.String("admin-email", getEnv("ADMIN_EMAIL", "admin@example.com"), "Initial admin email")
 	devMode := flag.Bool("dev", getEnv("DEV_MODE", "true") == "true", "Enable development mode")
@@ -88,16 +88,15 @@ func main() {
 	authenticator := auth.NewAuthenticator(db, emails, *adminEmail, *devMode)
 	auditLogger := audit.NewLogger(db)
 	alertEngine := alerts.NewEngine(db)
-	backupMgr := backup.NewManager(*dbPath, *stacksRoot, *backupDir, secretsMgr)
+	backupMgr := backup.NewManager(*dbPath, *stacksRoot, *backupDir, secretsMgr, db.GetAllStacks)
 	jobMgr := jobs.NewManager(db, agentClient)
 	eventBus := events.NewBus()
 
-	// 6. Discover existing stacks on startup
-	discoverExistingStacks(db, *stacksRoot, scanner)
-
-	// 7. Background workers
+	// 6. Background workers & async discovery via agent
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	go discoverExistingStacks(ctx, db, agentClient, scanner)
 
 	alertEngine.Start(ctx)
 	startMetricsCollector(ctx, db, agentClient)
@@ -141,10 +140,23 @@ func main() {
 	log.Printf("[panel-core] Stopped.")
 }
 
-func discoverExistingStacks(db *database.DB, stacksRoot string, scanner *security.ComposeScanner) {
-	discovered, err := compose.DiscoverStacks(stacksRoot)
+func discoverExistingStacks(ctx context.Context, db *database.DB, client *agent.Client, scanner *security.ComposeScanner) {
+	var discovered []compose.DiscoveredStack
+	var err error
+	// Retry reaching agent for socket readiness on startup
+	for i := 0; i < 10; i++ {
+		discovered, err = client.DiscoverStacks(ctx)
+		if err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 	if err != nil {
-		log.Printf("[panel-core] Stacks discovery warning: %v", err)
+		log.Printf("[panel-core] Stacks discovery notice: %v", err)
 		return
 	}
 
@@ -215,6 +227,7 @@ func startEventsSubscriber(ctx context.Context, client *agent.Client, bus *event
 				}()
 
 				_ = client.StreamEvents(subCtx, evCh)
+				close(evCh)
 				subCancel()
 				time.Sleep(3 * time.Second) // backoff before reconnect
 			}

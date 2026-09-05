@@ -20,6 +20,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/panel-core ./cmd/
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 RUN addgroup -g 10001 -S panel && adduser -u 10001 -S panel -G panel
+RUN mkdir -p /data/secrets /data/backups /run/panel-agent \
+    && chown -R panel:panel /data /run/panel-agent \
+    && chmod 700 /data /data/secrets /data/backups
+VOLUME ["/data"]
 USER panel:panel
 
 COPY --from=go-builder /bin/panel-core /bin/panel-core

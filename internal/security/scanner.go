@@ -28,12 +28,12 @@ type Finding struct {
 }
 
 type PortExposure struct {
-	Service      string `json:"service"`
-	HostIP       string `json:"host_ip,omitempty"`
-	HostPort     int    `json:"host_port"`
-	ContainerPort int   `json:"container_port"`
-	Protocol     string `json:"protocol"`
-	Exposure     string `json:"exposure"` // PUBLIC, LOCALHOST, INTERNAL
+	Service       string `json:"service"`
+	HostIP        string `json:"host_ip,omitempty"`
+	HostPort      int    `json:"host_port"`
+	ContainerPort int    `json:"container_port"`
+	Protocol      string `json:"protocol"`
+	Exposure      string `json:"exposure"` // PUBLIC, LOCALHOST, INTERNAL
 }
 
 type SecurityReport struct {
@@ -61,20 +61,20 @@ func NewScanner(allowedPaths []string) *ComposeScanner {
 }
 
 type composeService struct {
-	Image       string            `yaml:"image"`
-	Privileged  bool              `yaml:"privileged"`
-	Pid         string            `yaml:"pid"`
-	Ipc         string            `yaml:"ipc"`
-	NetworkMode string            `yaml:"network_mode"`
-	ReadOnly    bool              `yaml:"read_only"`
-	CapAdd      []string          `yaml:"cap_add"`
-	CapDrop     []string          `yaml:"cap_drop"`
-	Devices     []string          `yaml:"devices"`
-	Ports       []any             `yaml:"ports"`
-	Volumes     []any             `yaml:"volumes"`
-	Deploy      *composeDeploy    `yaml:"deploy"`
-	MemLimit    string            `yaml:"mem_limit"`
-	Cpus        any               `yaml:"cpus"`
+	Image       string         `yaml:"image"`
+	Privileged  bool           `yaml:"privileged"`
+	Pid         string         `yaml:"pid"`
+	Ipc         string         `yaml:"ipc"`
+	NetworkMode string         `yaml:"network_mode"`
+	ReadOnly    bool           `yaml:"read_only"`
+	CapAdd      []string       `yaml:"cap_add"`
+	CapDrop     []string       `yaml:"cap_drop"`
+	Devices     []string       `yaml:"devices"`
+	Ports       []any          `yaml:"ports"`
+	Volumes     []any          `yaml:"volumes"`
+	Deploy      *composeDeploy `yaml:"deploy"`
+	MemLimit    string         `yaml:"mem_limit"`
+	Cpus        any            `yaml:"cpus"`
 }
 
 type composeDeploy struct {

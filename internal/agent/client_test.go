@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"docker-panel/internal/compose"
 	"docker-panel/internal/models"
 )
 
@@ -146,5 +147,35 @@ func TestAgentClient_PruneResources(t *testing.T) {
 	}
 	if len(volPrune.VolumesDeleted) != 1 || volPrune.SpaceReclaimed != 52428800 {
 		t.Errorf("unexpected volPrune: %+v", volPrune)
+	}
+}
+
+func TestAgentClient_DiscoverStacks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/actions/compose/discover" {
+			t.Errorf("expected /actions/compose/discover, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(DiscoverStacksResponse{
+			Stacks: []compose.DiscoveredStack{
+				{
+					Name:           "demo-app",
+					Path:           "/srv/docker-panel/stacks/demo-app",
+					ComposePath:    "/srv/docker-panel/stacks/demo-app/compose.yaml",
+					ComposeContent: "services:\n  app:\n    image: nginx\n",
+					EnvContent:     "PORT=80\n",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient("tcp://" + server.Listener.Addr().String())
+	stacks, err := client.DiscoverStacks(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverStacks failed: %v", err)
+	}
+	if len(stacks) != 1 || stacks[0].Name != "demo-app" {
+		t.Errorf("unexpected stacks: %+v", stacks)
 	}
 }

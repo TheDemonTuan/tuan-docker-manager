@@ -14,12 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"docker-panel/internal/compose"
 	"docker-panel/internal/models"
 )
 
 type Client struct {
-	httpClient *http.Client
-	socketPath string
+	httpClient   *http.Client
+	streamClient *http.Client
+	socketPath   string
 }
 
 func NewClient(socketURL string) *Client {
@@ -27,14 +29,21 @@ func NewClient(socketURL string) *Client {
 		socketURL = "/run/panel-agent/agent.sock"
 	}
 
+	dialCtx := func(ctx context.Context, proto, addr string) (net.Conn, error) {
+		if strings.HasPrefix(socketURL, "tcp://") {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", strings.TrimPrefix(socketURL, "tcp://"))
+		}
+		path := strings.TrimPrefix(socketURL, "unix://")
+		return (&net.Dialer{}).DialContext(ctx, "unix", path)
+	}
+
 	transport := &http.Transport{
-		DialContext: func(ctx context.Context, proto, addr string) (net.Conn, error) {
-			if strings.HasPrefix(socketURL, "tcp://") {
-				return (&net.Dialer{}).DialContext(ctx, "tcp", strings.TrimPrefix(socketURL, "tcp://"))
-			}
-			path := strings.TrimPrefix(socketURL, "unix://")
-			return (&net.Dialer{}).DialContext(ctx, "unix", path)
-		},
+		DialContext:       dialCtx,
+		DisableKeepAlives: false,
+	}
+
+	streamTransport := &http.Transport{
+		DialContext:       dialCtx,
 		DisableKeepAlives: false,
 	}
 
@@ -43,6 +52,10 @@ func NewClient(socketURL string) *Client {
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   120 * time.Second, // Long timeout for compose jobs/pulls
+		},
+		streamClient: &http.Client{
+			Transport: streamTransport,
+			Timeout:   0, // Allow continuous streaming
 		},
 	}
 }
@@ -126,7 +139,7 @@ func (c *Client) StreamLogs(ctx context.Context, id string, follow bool, tail st
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.streamClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +157,14 @@ func (c *Client) ComposeAction(ctx context.Context, req ComposeActionRequest) (*
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *Client) DiscoverStacks(ctx context.Context) ([]compose.DiscoveredStack, error) {
+	var resp DiscoverStacksResponse
+	if err := c.doJSON(ctx, "POST", "http://agent/actions/compose/discover", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Stacks, nil
 }
 
 func (c *Client) ListImages(ctx context.Context, all bool) ([]models.ImageInfo, error) {
@@ -239,7 +260,7 @@ func (c *Client) StreamEvents(ctx context.Context, eventChan chan<- models.Docke
 	if err != nil {
 		return err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.streamClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -252,7 +273,11 @@ func (c *Client) StreamEvents(ctx context.Context, eventChan chan<- models.Docke
 			data := strings.TrimPrefix(line, "data: ")
 			var event models.DockerEvent
 			if err := json.Unmarshal([]byte(data), &event); err == nil {
-				eventChan <- event
+				select {
+				case eventChan <- event:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
 		}
 	}

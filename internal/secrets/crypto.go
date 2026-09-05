@@ -94,5 +94,3 @@ func (m *Manager) Decrypt(ciphertext, nonce []byte) ([]byte, error) {
 func (m *Manager) Key() []byte {
 	return m.key
 }
-
-

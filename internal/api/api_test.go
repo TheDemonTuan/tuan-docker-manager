@@ -15,6 +15,7 @@ import (
 	"docker-panel/internal/audit"
 	"docker-panel/internal/auth"
 	"docker-panel/internal/backup"
+	"docker-panel/internal/compose"
 	"docker-panel/internal/database"
 	"docker-panel/internal/events"
 	"docker-panel/internal/jobs"
@@ -64,6 +65,10 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 			_ = json.NewEncoder(w).Encode(agent.ComposeActionResponse{
 				Success: true,
 				Logs:    "Compose action executed",
+			})
+		case "/actions/compose/discover":
+			_ = json.NewEncoder(w).Encode(agent.DiscoverStacksResponse{
+				Stacks: []compose.DiscoveredStack{},
 			})
 		case "/metrics/host":
 			_ = json.NewEncoder(w).Encode(models.HostMetrics{
@@ -206,5 +211,45 @@ func TestAPI_CreateStack(t *testing.T) {
 
 	if stack.Name != "blog" || stack.SecurityScore < 50 {
 		t.Errorf("unexpected created stack: %+v", stack)
+	}
+}
+
+func TestAPI_DeleteStack(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	handler := server.Routes()
+
+	// 1. Create a stack first in DB
+	stk := &models.Stack{
+		ID:             "stk_to_delete",
+		Name:           "temp-stack",
+		Status:         models.StackStatusStopped,
+		Path:           "/srv/docker-panel/stacks/temp-stack",
+		ComposeContent: "services:\n  app:\n    image: alpine\n",
+		IsSystem:       false,
+	}
+	if err := server.db.UpsertStack(stk); err != nil {
+		t.Fatalf("failed to insert test stack: %v", err)
+	}
+
+	// 2. Delete request with critical confirm
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/stacks/stk_to_delete", nil)
+	req.Header.Set("Cf-Access-Authenticated-User-Email", "admin@example.com")
+	req.Header.Set("X-Critical-Confirm", "1")
+	req.Host = "example.com"
+	req.Header.Set("Origin", "http://example.com")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on delete, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 3. Verify stack is deleted from DB
+	deleted, _ := server.db.GetStackByID("stk_to_delete")
+	if deleted != nil {
+		t.Errorf("expected stack to be deleted from database, got %+v", deleted)
 	}
 }

@@ -29,6 +29,18 @@ func NewRunner(stacksRoot string) *Runner {
 	}
 }
 
+func (r *Runner) StacksRoot() string {
+	return r.stacksRoot
+}
+
+func (r *Runner) DeleteStackDir(name string) error {
+	dir, err := r.GetStackDir(name)
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
+}
+
 func (r *Runner) ValidateStackName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {

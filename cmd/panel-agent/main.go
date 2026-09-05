@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -24,15 +25,18 @@ import (
 var Version = "0.1.0-mvp"
 
 func main() {
-	socketURL := flag.String("socket", getEnv("AGENT_SOCKET_URL", "/run/panel-agent/agent.sock"), "Agent listen socket URL (unix://path or tcp://addr)")
-	dockerSock := flag.String("docker-sock", getEnv("DOCKER_SOCKET_PATH", "/var/run/docker.sock"), "Path to Docker daemon socket")
+	socketURL := flag.String("socket", getEnv("AGENT_SOCKET_URL", getEnv("SOCKET_PATH", "/run/panel-agent/agent.sock")), "Agent listen socket URL (unix://path or tcp://addr)")
+	dockerHost := getEnv("DOCKER_SOCKET_PATH", getEnv("DOCKER_HOST", "/var/run/docker.sock"))
+	dockerHost = strings.TrimPrefix(dockerHost, "unix://")
+	dockerSock := flag.String("docker-sock", dockerHost, "Path to Docker daemon socket")
+	socketGID := flag.Int("socket-gid", getEnvInt("AGENT_SOCKET_GID", 10001), "GID for Unix socket group ownership")
 	stacksRoot := flag.String("stacks-root", getEnv("STACKS_ROOT", "/srv/docker-panel/stacks"), "Base directory for Compose stacks")
 	procPath := flag.String("host-proc", getEnv("HOST_PROC", "/host/proc"), "Host proc filesystem path")
 	sysPath := flag.String("host-sys", getEnv("HOST_SYS", "/host/sys"), "Host sys filesystem path")
 	flag.Parse()
 
 	log.Printf("[panel-agent] Starting version %s...", Version)
-	log.Printf("[panel-agent] Socket: %s", *socketURL)
+	log.Printf("[panel-agent] Socket: %s (GID: %d)", *socketURL, *socketGID)
 	log.Printf("[panel-agent] Stacks root: %s", *stacksRoot)
 
 	// Ensure stacks root exists
@@ -52,11 +56,15 @@ func main() {
 	cleanPath := strings.TrimPrefix(*socketURL, "unix://")
 
 	if isUnix {
-		// Ensure socket parent directory exists
+		// Ensure socket parent directory exists with secure group permissions
 		socketDir := filepath.Dir(cleanPath)
-		if err := os.MkdirAll(socketDir, 0755); err != nil {
+		if err := os.MkdirAll(socketDir, 0770); err != nil {
 			log.Fatalf("[panel-agent] Failed to create socket directory %s: %v", socketDir, err)
 		}
+		if *socketGID >= 0 {
+			_ = os.Chown(socketDir, -1, *socketGID)
+		}
+		_ = os.Chmod(socketDir, 0770)
 
 		// Remove stale socket if exists
 		if _, err := os.Stat(cleanPath); err == nil {
@@ -67,7 +75,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("[panel-agent] Failed to bind unix socket %s: %v", cleanPath, err)
 		}
-		// Set permissions so panel-core can read/write
+		// Set permissions and group so panel-core (running as panel:10001) can access socket
+		if *socketGID >= 0 {
+			if err := os.Chown(cleanPath, -1, *socketGID); err != nil {
+				log.Printf("[panel-agent] Notice: could not chown socket to gid %d: %v", *socketGID, err)
+			}
+		}
 		_ = os.Chmod(cleanPath, 0660)
 		defer os.Remove(cleanPath)
 	} else {
@@ -107,6 +120,15 @@ func main() {
 func getEnv(key, def string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return def
+}
+
+func getEnvInt(key string, def int) int {
+	if val := os.Getenv(key); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			return v
+		}
 	}
 	return def
 }

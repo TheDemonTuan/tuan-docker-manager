@@ -115,14 +115,14 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 	}
 
 	var rawContainers []struct {
-		ID      string            `json:"Id"`
-		Names   []string          `json:"Names"`
-		Image   string            `json:"Image"`
-		ImageID string            `json:"ImageID"`
-		Command string            `json:"Command"`
-		Created int64             `json:"Created"`
-		State   string            `json:"State"`
-		Status  string            `json:"Status"`
+		ID      string   `json:"Id"`
+		Names   []string `json:"Names"`
+		Image   string   `json:"Image"`
+		ImageID string   `json:"ImageID"`
+		Command string   `json:"Command"`
+		Created int64    `json:"Created"`
+		State   string   `json:"State"`
+		Status  string   `json:"Status"`
 		Ports   []struct {
 			IP          string `json:"IP"`
 			PrivatePort uint16 `json:"PrivatePort"`
@@ -201,9 +201,9 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*models.Conta
 	}
 
 	var raw struct {
-		ID      string `json:"Id"`
-		Created string `json:"Created"`
-		Path    string `json:"Path"`
+		ID      string   `json:"Id"`
+		Created string   `json:"Created"`
+		Path    string   `json:"Path"`
 		Args    []string `json:"Args"`
 		State   struct {
 			Status     string `json:"Status"`
@@ -221,9 +221,9 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*models.Conta
 				Status string `json:"Status"`
 			} `json:"Health"`
 		} `json:"State"`
-		Image           string `json:"Image"`
-		RestartCount    int    `json:"RestartCount"`
-		HostConfig      struct {
+		Image        string `json:"Image"`
+		RestartCount int    `json:"RestartCount"`
+		HostConfig   struct {
 			RestartPolicy struct {
 				Name string `json:"Name"`
 			} `json:"RestartPolicy"`
@@ -446,8 +446,8 @@ func (c *Client) GetContainerStats(ctx context.Context, id string) (*models.Cont
 			SystemCPUUsage uint64 `json:"system_cpu_usage"`
 		} `json:"precpu_stats"`
 		MemoryStats struct {
-			Usage uint64 `json:"usage"`
-			Limit uint64 `json:"limit"`
+			Usage uint64            `json:"usage"`
+			Limit uint64            `json:"limit"`
 			Stats map[string]uint64 `json:"stats"`
 		} `json:"memory_stats"`
 		Networks map[string]struct {

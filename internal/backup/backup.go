@@ -14,24 +14,33 @@ import (
 	"docker-panel/internal/secrets"
 )
 
+type StacksProvider func() ([]*models.Stack, error)
+
 type Manager struct {
-	dbPath     string
-	stacksDir  string
-	backupDir  string
-	secretsMgr *secrets.Manager
+	dbPath         string
+	stacksDir      string
+	backupDir      string
+	secretsMgr     *secrets.Manager
+	stacksProvider StacksProvider
 }
 
-func NewManager(dbPath, stacksDir, backupDir string, secretsMgr *secrets.Manager) *Manager {
+func NewManager(dbPath, stacksDir, backupDir string, secretsMgr *secrets.Manager, stacksProvider ...StacksProvider) *Manager {
 	if backupDir == "" {
-		backupDir = "/srv/docker-panel/backups"
+		backupDir = "/data/backups"
 	}
 	_ = os.MkdirAll(backupDir, 0700)
 
+	var provider StacksProvider
+	if len(stacksProvider) > 0 {
+		provider = stacksProvider[0]
+	}
+
 	return &Manager{
-		dbPath:     dbPath,
-		stacksDir:  stacksDir,
-		backupDir:  backupDir,
-		secretsMgr: secretsMgr,
+		dbPath:         dbPath,
+		stacksDir:      stacksDir,
+		backupDir:      backupDir,
+		secretsMgr:     secretsMgr,
+		stacksProvider: provider,
 	}
 }
 
@@ -58,30 +67,57 @@ func (m *Manager) CreateBackup() (*models.BackupRecord, error) {
 	}
 
 	// 2. Add Stacks Compose and .env files
-	if m.stacksDir != "" {
-		_ = filepath.Walk(m.stacksDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return nil
-			}
-			base := filepath.Base(path)
-			if strings.HasSuffix(base, ".yaml") || strings.HasSuffix(base, ".yml") || base == ".env" {
-				rel, relErr := filepath.Rel(m.stacksDir, path)
-				if relErr == nil {
-					data, readErr := os.ReadFile(path)
-					if readErr == nil {
-						hdr := &tar.Header{
-							Name: filepath.Join("stacks", rel),
-							Mode: 0644,
-							Size: int64(len(data)),
-						}
-						if err := tarWriter.WriteHeader(hdr); err == nil {
-							_, _ = tarWriter.Write(data)
-						}
+	if m.stacksProvider != nil {
+		if stacks, err := m.stacksProvider(); err == nil {
+			for _, stk := range stacks {
+				if stk.ComposeContent != "" {
+					hdr := &tar.Header{
+						Name: filepath.ToSlash(filepath.Join("stacks", stk.Name, "compose.yaml")),
+						Mode: 0644,
+						Size: int64(len(stk.ComposeContent)),
+					}
+					if err := tarWriter.WriteHeader(hdr); err == nil {
+						_, _ = tarWriter.Write([]byte(stk.ComposeContent))
+					}
+				}
+				if stk.EnvContent != "" {
+					hdr := &tar.Header{
+						Name: filepath.ToSlash(filepath.Join("stacks", stk.Name, ".env")),
+						Mode: 0600,
+						Size: int64(len(stk.EnvContent)),
+					}
+					if err := tarWriter.WriteHeader(hdr); err == nil {
+						_, _ = tarWriter.Write([]byte(stk.EnvContent))
 					}
 				}
 			}
-			return nil
-		})
+		}
+	} else if m.stacksDir != "" {
+		if _, err := os.Stat(m.stacksDir); err == nil {
+			_ = filepath.Walk(m.stacksDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil
+				}
+				base := filepath.Base(path)
+				if strings.HasSuffix(base, ".yaml") || strings.HasSuffix(base, ".yml") || base == ".env" {
+					rel, relErr := filepath.Rel(m.stacksDir, path)
+					if relErr == nil {
+						data, readErr := os.ReadFile(path)
+						if readErr == nil {
+							hdr := &tar.Header{
+								Name: filepath.ToSlash(filepath.Join("stacks", rel)),
+								Mode: 0644,
+								Size: int64(len(data)),
+							}
+							if err := tarWriter.WriteHeader(hdr); err == nil {
+								_, _ = tarWriter.Write(data)
+							}
+						}
+					}
+				}
+				return nil
+			})
+		}
 	}
 
 	_ = tarWriter.Close()

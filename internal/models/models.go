@@ -99,18 +99,18 @@ type ContainerInfo struct {
 
 type ContainerDetail struct {
 	ContainerInfo
-	StartedAt     string            `json:"started_at"`
-	FinishedAt    string            `json:"finished_at"`
-	RestartCount  int               `json:"restart_count"`
-	RestartPolicy string            `json:"restart_policy"`
-	IPAddress     string            `json:"ip_address"`
-	Networks      []string          `json:"networks"`
-	Mounts        []MountDetail     `json:"mounts"`
-	Env           []string          `json:"env,omitempty"`
-	Args          []string          `json:"args,omitempty"`
-	Config        map[string]any    `json:"config,omitempty"`
-	HostConfig    map[string]any    `json:"host_config,omitempty"`
-	StateDetail   map[string]any    `json:"state_detail,omitempty"`
+	StartedAt     string         `json:"started_at"`
+	FinishedAt    string         `json:"finished_at"`
+	RestartCount  int            `json:"restart_count"`
+	RestartPolicy string         `json:"restart_policy"`
+	IPAddress     string         `json:"ip_address"`
+	Networks      []string       `json:"networks"`
+	Mounts        []MountDetail  `json:"mounts"`
+	Env           []string       `json:"env,omitempty"`
+	Args          []string       `json:"args,omitempty"`
+	Config        map[string]any `json:"config,omitempty"`
+	HostConfig    map[string]any `json:"host_config,omitempty"`
+	StateDetail   map[string]any `json:"state_detail,omitempty"`
 }
 
 type MountDetail struct {
@@ -299,4 +299,3 @@ type PruneVolumesResult struct {
 	VolumesDeleted []string `json:"volumes_deleted"`
 	SpaceReclaimed uint64   `json:"space_reclaimed"`
 }
-

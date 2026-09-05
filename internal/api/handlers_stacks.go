@@ -165,11 +165,11 @@ func (s *Server) handleDeleteStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First execute compose down
+	// First execute compose delete (down + remove directory) via agent
 	_, _ = s.agentClient.ComposeAction(r.Context(), agent.ComposeActionRequest{
 		StackName:     stack.Name,
 		StackPath:     stack.Path,
-		Action:        "down",
+		Action:        "delete",
 		RemoveVolumes: true,
 	})
 
