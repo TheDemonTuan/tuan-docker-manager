@@ -65,8 +65,10 @@ docker compose version >/dev/null || die "Docker Compose v2 is required"
 command -v flock >/dev/null || die "flock is required"
 [[ -f "$COMPOSE" ]] || die "$COMPOSE is missing"
 [[ -f "$APP_ENV" ]] || die "$APP_ENV is missing"
-[[ -s "$APP_DIR/.tunnel-token" ]] || die "$APP_DIR/.tunnel-token is missing or empty"
-chmod 600 "$APP_ENV" "$APP_DIR/.tunnel-token"
+chmod 600 "$APP_ENV"
+if [[ -f "$APP_DIR/.tunnel-token" ]]; then
+  chmod 600 "$APP_DIR/.tunnel-token"
+fi
 mkdir -p "$APP_DIR"
 
 exec 9>"$LOCK_FILE"
