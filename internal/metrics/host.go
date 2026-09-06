@@ -14,14 +14,26 @@ import (
 )
 
 type HostCollector struct {
-	procPath   string
-	sysPath    string
-	rootPath   string
-	lastCPU    cpuSnapshot
-	lastNet    netSnapshot
-	lastDisk   diskSnapshot
-	lastSample time.Time
-	mu         sync.Mutex
+	procPath     string
+	sysPath      string
+	rootPath     string
+	lastCPU      cpuSnapshot
+	lastNet      netSnapshot
+	lastDisk     diskSnapshot
+	lastNetRate  netRateSnapshot
+	lastDiskRate diskRateSnapshot
+	lastSample   time.Time
+	mu           sync.Mutex
+}
+
+type netRateSnapshot struct {
+	rxRate float64
+	txRate float64
+}
+
+type diskRateSnapshot struct {
+	readRate  float64
+	writeRate float64
 }
 
 type cpuSnapshot struct {
@@ -68,11 +80,48 @@ func NewHostCollector(procPath, sysPath, rootPath string) *HostCollector {
 			rootPath = "/"
 		}
 	}
-	return &HostCollector{
+	c := &HostCollector{
 		procPath: procPath,
 		sysPath:  sysPath,
 		rootPath: rootPath,
 	}
+
+	// Prime initial baseline metrics
+	var initial models.HostMetrics
+	c.mu.Lock()
+	now := time.Now()
+	if _, err := os.Stat(filepath.Join(c.procPath, "stat")); err == nil {
+		c.readLinuxProc(&initial, now)
+	}
+	c.mu.Unlock()
+
+	// Background ticker every 2s so rates are continuously sampled and fresh
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for tickTime := range ticker.C {
+			var dummy models.HostMetrics
+			c.mu.Lock()
+			if _, err := os.Stat(filepath.Join(c.procPath, "stat")); err == nil {
+				c.readLinuxProc(&dummy, tickTime)
+			}
+			c.mu.Unlock()
+		}
+	}()
+
+	return c
+}
+
+func isVirtualNetDev(ifname string) bool {
+	if ifname == "lo" {
+		return true
+	}
+	for _, prefix := range []string{"veth", "br-", "docker", "virbr", "vnet"} {
+		if strings.HasPrefix(ifname, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *HostCollector) Collect() (*models.HostMetrics, error) {
@@ -197,10 +246,17 @@ func (h *HostCollector) readLinuxProc(m *models.HostMetrics, now time.Time) {
 		}
 	}
 
-	// Network from /proc/net/dev
-	if netBytes, err := os.ReadFile(filepath.Join(h.procPath, "net/dev")); err == nil {
+	// Network from host network namespace (/proc/1/net/dev) or fallback to /proc/net/dev
+	netDevPath := filepath.Join(h.procPath, "1/net/dev")
+	if _, err := os.Stat(netDevPath); err != nil {
+		netDevPath = filepath.Join(h.procPath, "net/dev")
+	}
+
+	if netBytes, err := os.ReadFile(netDevPath); err == nil {
 		scanner := bufio.NewScanner(strings.NewReader(string(netBytes)))
-		var totalRx, totalTx uint64
+		var physRx, physTx uint64
+		var anyRx, anyTx uint64
+		foundPhys := false
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if strings.Contains(line, ":") {
@@ -213,20 +269,40 @@ func (h *HostCollector) readLinuxProc(m *models.HostMetrics, now time.Time) {
 				if len(fields) >= 9 {
 					rx, _ := strconv.ParseUint(fields[0], 10, 64)
 					tx, _ := strconv.ParseUint(fields[8], 10, 64)
-					totalRx += rx
-					totalTx += tx
+					anyRx += rx
+					anyTx += tx
+					if !isVirtualNetDev(ifname) {
+						physRx += rx
+						physTx += tx
+						foundPhys = true
+					}
 				}
 			}
 		}
 
-		if !h.lastSample.IsZero() && h.lastNet.rxBytes > 0 {
-			elapsed := now.Sub(h.lastSample).Seconds()
-			if elapsed > 0 {
-				m.NetRxBytesRate = float64(totalRx-h.lastNet.rxBytes) / elapsed
-				m.NetTxBytesRate = float64(totalTx-h.lastNet.txBytes) / elapsed
-			}
+		totalRx := anyRx
+		totalTx := anyTx
+		if foundPhys {
+			totalRx = physRx
+			totalTx = physTx
 		}
-		h.lastNet = netSnapshot{rxBytes: totalRx, txBytes: totalTx}
+
+		if !h.lastSample.IsZero() && (h.lastNet.rxBytes > 0 || h.lastNet.txBytes > 0) {
+			elapsed := now.Sub(h.lastSample).Seconds()
+			if elapsed >= 0.5 {
+				if totalRx >= h.lastNet.rxBytes {
+					h.lastNetRate.rxRate = float64(totalRx-h.lastNet.rxBytes) / elapsed
+				}
+				if totalTx >= h.lastNet.txBytes {
+					h.lastNetRate.txRate = float64(totalTx-h.lastNet.txBytes) / elapsed
+				}
+				h.lastNet = netSnapshot{rxBytes: totalRx, txBytes: totalTx}
+			}
+		} else {
+			h.lastNet = netSnapshot{rxBytes: totalRx, txBytes: totalTx}
+		}
+		m.NetRxBytesRate = h.lastNetRate.rxRate
+		m.NetTxBytesRate = h.lastNetRate.txRate
 	}
 
 	// Disk storage from root filesystem statfs
@@ -268,17 +344,27 @@ func (h *HostCollector) readLinuxProc(m *models.HostMetrics, now time.Time) {
 				totalWrites += secWrite * 512
 			}
 		}
-		if !h.lastSample.IsZero() && h.lastDisk.reads > 0 {
+		if !h.lastSample.IsZero() && (h.lastDisk.reads > 0 || h.lastDisk.writes > 0) {
 			elapsed := now.Sub(h.lastSample).Seconds()
-			if elapsed > 0 {
-				m.DiskReadRate = float64(totalReads-h.lastDisk.reads) / elapsed
-				m.DiskWriteRate = float64(totalWrites-h.lastDisk.writes) / elapsed
+			if elapsed >= 0.5 {
+				if totalReads >= h.lastDisk.reads {
+					h.lastDiskRate.readRate = float64(totalReads-h.lastDisk.reads) / elapsed
+				}
+				if totalWrites >= h.lastDisk.writes {
+					h.lastDiskRate.writeRate = float64(totalWrites-h.lastDisk.writes) / elapsed
+				}
+				h.lastDisk = diskSnapshot{reads: totalReads, writes: totalWrites}
 			}
+		} else {
+			h.lastDisk = diskSnapshot{reads: totalReads, writes: totalWrites}
 		}
-		h.lastDisk = diskSnapshot{reads: totalReads, writes: totalWrites}
+		m.DiskReadRate = h.lastDiskRate.readRate
+		m.DiskWriteRate = h.lastDiskRate.writeRate
 	}
 
-	h.lastSample = now
+	if h.lastSample.IsZero() || now.Sub(h.lastSample).Seconds() >= 0.5 {
+		h.lastSample = now
+	}
 }
 
 func (h *HostCollector) readGeneric(m *models.HostMetrics, now time.Time) {
