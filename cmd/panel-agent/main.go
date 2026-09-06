@@ -35,6 +35,7 @@ func main() {
 	stacksRoot := flag.String("stacks-root", getEnv("STACKS_ROOT", "/srv/docker-panel/stacks"), "Base directory for Compose stacks")
 	procPath := flag.String("host-proc", getEnv("HOST_PROC", "/host/proc"), "Host proc filesystem path")
 	sysPath := flag.String("host-sys", getEnv("HOST_SYS", "/host/sys"), "Host sys filesystem path")
+	rootPath := flag.String("host-root", getEnv("HOST_ROOT", "/host/root"), "Host root filesystem path")
 	flag.Parse()
 
 	if *healthcheck {
@@ -53,7 +54,7 @@ func main() {
 	_ = os.MkdirAll(*stacksRoot, 0755)
 
 	dockerClient := docker.NewClient(*dockerSock)
-	hostColl := metrics.NewHostCollector(*procPath, *sysPath)
+	hostColl := metrics.NewHostCollector(*procPath, *sysPath, *rootPath)
 	gpuColl := gpu.NewCollector()
 	composeRun := compose.NewRunner(*stacksRoot)
 
