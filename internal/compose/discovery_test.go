@@ -73,12 +73,15 @@ func TestCompose_MatchContainersToStacks(t *testing.T) {
 		{Name: "web-app"},
 		{Name: "database"},
 		{Name: "analytics"},
+		{Name: "migrated-app"},
 	}
 
 	containers := []models.ContainerInfo{
 		{ID: "c1", Names: []string{"/web-app_web_1"}, StackName: "web-app", State: "running"},
 		{ID: "c2", Names: []string{"/database_db_1"}, StackName: "database", State: "running"},
 		{ID: "c3", Names: []string{"/database_cache_1"}, StackName: "database", State: "exited"},
+		{ID: "c4", Names: []string{"/migrated-app_web_1"}, StackName: "migrated-app", State: "running", Status: "Up 5 hours"},
+		{ID: "c5", Names: []string{"/migrated-app_init_1"}, StackName: "migrated-app", State: "exited", Status: "Exited (0) 5 hours ago"},
 	}
 
 	MatchContainersToStacks(stacks, containers)
@@ -99,5 +102,12 @@ func TestCompose_MatchContainersToStacks(t *testing.T) {
 
 	if stacks[2].Status != models.StackStatusStopped {
 		t.Errorf("analytics expected stopped, got %s", stacks[2].Status)
+	}
+
+	if stacks[3].Status != models.StackStatusRunning {
+		t.Errorf("migrated-app expected running (init exited with 0), got %s", stacks[3].Status)
+	}
+	if len(stacks[3].Containers) != 2 {
+		t.Errorf("migrated-app expected 2 containers, got %d", len(stacks[3].Containers))
 	}
 }

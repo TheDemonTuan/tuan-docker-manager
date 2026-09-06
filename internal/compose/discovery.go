@@ -136,12 +136,15 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 			continue
 		}
 		runningCount := 0
+		cleanExitCount := 0
 		for _, c := range s.Containers {
 			if strings.EqualFold(c.State, "running") {
 				runningCount++
+			} else if isCleanExit(c) {
+				cleanExitCount++
 			}
 		}
-		if runningCount == len(s.Containers) {
+		if runningCount > 0 && (runningCount+cleanExitCount) == len(s.Containers) {
 			s.Status = models.StackStatusRunning
 		} else if runningCount > 0 {
 			s.Status = models.StackStatusPartial
@@ -150,4 +153,9 @@ func MatchContainersToStacks(stacks []*models.Stack, containers []models.Contain
 		}
 	}
 	return stacks
+}
+
+func isCleanExit(c models.ContainerInfo) bool {
+	status := strings.ToLower(strings.TrimSpace(c.Status))
+	return strings.Contains(status, "exited (0)")
 }

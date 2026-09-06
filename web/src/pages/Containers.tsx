@@ -461,13 +461,14 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                         <tbody className="divide-y divide-slate-800/50 text-sm">
                           {grpContainers.map((c) => {
                             const isRunning = c.state === 'running'
+                            const isCleanExit = c.status.toLowerCase().includes('exited (0)')
                             return (
                               <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
                                 <td className="px-6 py-3.5">
                                   <div className="flex items-center gap-2">
                                     <span
                                       className={`w-2 h-2 rounded-full ${
-                                        isRunning ? 'bg-emerald-400' : 'bg-slate-400'
+                                        isRunning ? 'bg-emerald-400' : isCleanExit ? 'bg-blue-400' : 'bg-slate-400'
                                       }`}
                                     />
                                     <div>
@@ -501,7 +502,9 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                                     className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                                       isRunning
                                         ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
-                                        : 'bg-slate-800 text-slate-400'
+                                        : isCleanExit
+                                        ? 'bg-blue-950/80 text-blue-300 border border-blue-800/60'
+                                        : 'bg-slate-800 text-slate-400 border border-slate-700'
                                     }`}
                                   >
                                     {c.status}
@@ -623,6 +626,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                 ) : (
                   filtered.map((c) => {
                     const isRunning = c.state === 'running'
+                    const isCleanExit = c.status.toLowerCase().includes('exited (0)')
                     return (
                       <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
                         <td className="px-6 py-4">
@@ -664,7 +668,9 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                               isRunning
                                 ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
-                                : 'bg-slate-800 text-slate-400'
+                                : isCleanExit
+                                ? 'bg-blue-950/80 text-blue-300 border border-blue-800/60'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
                             }`}
                           >
                             {c.status}

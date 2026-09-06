@@ -311,6 +311,8 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                       className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
                         isRunning
                           ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/60'
+                          : stk.status === 'partial'
+                          ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
                           : 'bg-slate-800 text-slate-400 border-slate-700'
                       }`}
                     >
@@ -356,6 +358,8 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                       className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${
                         activeStack.status === 'running'
                           ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/60'
+                          : activeStack.status === 'partial'
+                          ? 'bg-amber-950/60 text-amber-400 border-amber-800/60'
                           : 'bg-slate-800 text-slate-400 border-slate-700'
                       }`}
                     >
@@ -687,7 +691,17 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                               <div className="font-semibold text-slate-200 text-sm">{c.names.join(', ')}</div>
                               <div className="text-xs text-slate-400 font-mono mt-0.5">{c.image}</div>
                               <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-3">
-                                <span>Status: {c.status}</span>
+                                <span
+                                  className={
+                                    c.state === 'running'
+                                      ? 'text-emerald-400 font-medium'
+                                      : c.status.toLowerCase().includes('exited (0)')
+                                      ? 'text-blue-400 font-medium'
+                                      : 'text-slate-400'
+                                  }
+                                >
+                                  Status: {c.status}
+                                </span>
                                 {cs && c.state === 'running' && (
                                   <>
                                     <span className="text-cyan-400 font-mono">⚡ {cs.cpu_percent.toFixed(1)}% CPU</span>
