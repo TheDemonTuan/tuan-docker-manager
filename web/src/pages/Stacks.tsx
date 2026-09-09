@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import { Stack, StackRevision, SecurityReport, Job, ContainerStats } from '../types'
+import { Stack, StackRevision, SecurityReport, Job, ContainerStats, StorageSnapshot } from '../types'
 import {
   IconLayers,
   IconPlus,
@@ -45,6 +45,7 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
 
   // Jobs
   const [activeJob, setActiveJob] = useState<Job | null>(null)
+  const [storage, setStorage] = useState<StorageSnapshot | null>(null)
 
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -60,6 +61,14 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  }
+
+  const loadStorage = async () => {
+    try {
+      setStorage(await api.getStorage())
+    } catch {
+      // Storage details are optional; stack management remains available.
+    }
   }
 
   const loadAllStats = async () => {
@@ -94,9 +103,11 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
   useEffect(() => {
     loadStacks()
     loadAllStats()
+    loadStorage()
     const timer = setInterval(() => {
       loadStacks()
       loadAllStats()
+      loadStorage()
     }, 4000)
     return () => clearInterval(timer)
   }, [selectedStackId])
@@ -289,6 +300,7 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                 const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
                 return acc + (s?.memory_used || 0)
               }, 0)
+              const stkStorage = storage?.stacks[stk.name]
 
               return (
                 <div
@@ -322,6 +334,11 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
 
                   <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
                     <span>{stk.containers?.length || 0} containers</span>
+                    {stkStorage && (
+                      <span className="font-mono text-[11px] text-amber-300">
+                        Disk {formatBytes(stkStorage.writable_bytes + stkStorage.exclusive_volume_bytes)}
+                      </span>
+                    )}
                     {isRunning && stkCpu > 0 && (
                       <span className="font-mono text-[11px] text-cyan-300">
                         ⚡ {stkCpu.toFixed(1)}% | 💾 {formatBytes(stkMem)}
@@ -421,6 +438,24 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                   )}
                 </div>
               </div>
+
+              {storage?.stacks[activeStack.name] && (() => {
+                const current = storage.stacks[activeStack.name]
+                return (
+                  <div className="px-4 py-3 bg-amber-950/30 border-b border-amber-900/60 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-amber-200">Storage measured {new Date(storage.measured_at).toLocaleTimeString()}</span>
+                      <span className="text-amber-400">{storage.status === 'partial' || current.incomplete ? 'Partial measurement' : 'Docker Engine measurement'}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 font-mono">
+                      <span className="text-slate-300">Writable <strong className="text-amber-300">{formatBytes(current.writable_bytes)}</strong></span>
+                      <span className="text-slate-300">Exclusive volumes <strong className="text-amber-300">{formatBytes(current.exclusive_volume_bytes)}</strong></span>
+                      <span className="text-slate-300">Shared volumes <strong className="text-amber-300">{formatBytes(current.shared_volume_bytes)}</strong></span>
+                    </div>
+                    <p className="text-slate-500 mt-2">{storage.scope}</p>
+                  </div>
+                )
+              })()}
 
               {/* Job Running Banner */}
               {activeJob && activeJob.status === 'running' && (

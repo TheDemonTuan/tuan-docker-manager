@@ -37,6 +37,10 @@ type InspectContainerResponse struct {
 	Container *models.ContainerDetail `json:"container"`
 }
 
+type StorageSnapshotResponse struct {
+	Storage *models.StorageSnapshot `json:"storage"`
+}
+
 type ContainerActionRequest struct {
 	ID     string `json:"id"`
 	Action string `json:"action"` // start, stop, restart, kill

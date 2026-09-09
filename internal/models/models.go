@@ -100,6 +100,37 @@ type ContainerInfo struct {
 	ComposeFile string            `json:"compose_file,omitempty"`
 	WorkingDir  string            `json:"working_dir,omitempty"`
 	Health      string            `json:"health,omitempty"`
+	SizeRw      *int64            `json:"size_rw,omitempty"`
+	SizeRootFS  *int64            `json:"size_root_fs,omitempty"`
+}
+
+type StorageSnapshot struct {
+	MeasuredAt time.Time                   `json:"measured_at"`
+	Containers map[string]ContainerStorage `json:"containers"`
+	Volumes    map[string]VolumeStorage    `json:"volumes"`
+	Stacks     map[string]StackStorage     `json:"stacks"`
+	Status     string                      `json:"status"`
+	Scope      string                      `json:"scope"`
+}
+
+type ContainerStorage struct {
+	WritableBytes *int64   `json:"writable_bytes,omitempty"`
+	RootFSBytes   *int64   `json:"root_fs_bytes,omitempty"`
+	VolumeNames   []string `json:"volume_names,omitempty"`
+}
+
+type VolumeStorage struct {
+	Bytes      *int64   `json:"bytes,omitempty"`
+	RefCount   int      `json:"ref_count"`
+	StackNames []string `json:"stack_names,omitempty"`
+}
+
+type StackStorage struct {
+	WritableBytes        int64    `json:"writable_bytes"`
+	ExclusiveVolumeBytes int64    `json:"exclusive_volume_bytes"`
+	SharedVolumeBytes    int64    `json:"shared_volume_bytes"`
+	VolumeNames          []string `json:"volume_names,omitempty"`
+	Incomplete           bool     `json:"incomplete"`
 }
 
 type ContainerDetail struct {
@@ -120,6 +151,7 @@ type ContainerDetail struct {
 
 type MountDetail struct {
 	Type        string `json:"type"`
+	Name        string `json:"name,omitempty"`
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
 	Mode        string `json:"mode"`

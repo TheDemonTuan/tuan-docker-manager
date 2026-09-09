@@ -38,6 +38,25 @@ func TestAgentClient_Ping(t *testing.T) {
 	}
 }
 
+func TestAgentClient_StorageSnapshot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/actions/storage/snapshot" {
+			t.Errorf("expected storage snapshot path, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(StorageSnapshotResponse{Storage: &models.StorageSnapshot{Status: "complete"}})
+	}))
+	defer server.Close()
+
+	client := NewClient("tcp://" + server.Listener.Addr().String())
+	snapshot, err := client.StorageSnapshot(context.Background())
+	if err != nil {
+		t.Fatalf("StorageSnapshot failed: %v", err)
+	}
+	if snapshot == nil || snapshot.Status != "complete" {
+		t.Fatalf("unexpected storage snapshot: %+v", snapshot)
+	}
+}
+
 func TestAgentClient_ListContainers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/actions/containers/list" {

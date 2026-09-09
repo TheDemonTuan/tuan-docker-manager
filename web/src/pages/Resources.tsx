@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import { ImageInfo, VolumeInfo, NetworkInfo } from '../types'
+import { ImageInfo, VolumeInfo, NetworkInfo, StorageSnapshot } from '../types'
 import {
   IconDownload,
   IconHardDrive,
@@ -26,6 +26,7 @@ export const Resources: React.FC = () => {
 
   // Networks state
   const [networks, setNetworks] = useState<NetworkInfo[]>([])
+  const [storage, setStorage] = useState<StorageSnapshot | null>(null)
 
   const loadData = async () => {
     try {
@@ -46,6 +47,7 @@ export const Resources: React.FC = () => {
 
   useEffect(() => {
     loadData()
+    api.getStorage().then(setStorage).catch(() => setStorage(null))
   }, [tab])
 
   const handlePullImage = async () => {
@@ -246,6 +248,7 @@ export const Resources: React.FC = () => {
               <tr className="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-950/20">
                 <th className="px-6 py-3">Volume Name</th>
                 <th className="px-6 py-3">Driver</th>
+                <th className="px-6 py-3">Size / References</th>
                 <th className="px-6 py-3">Mountpoint</th>
                 <th className="px-6 py-3">Created</th>
                 <th className="px-6 py-3 text-right">Actions</th>
@@ -256,6 +259,17 @@ export const Resources: React.FC = () => {
                 <tr key={v.name} className="hover:bg-slate-800/30 transition-colors">
                   <td className="px-6 py-4 font-mono text-xs font-semibold text-slate-200">{v.name}</td>
                   <td className="px-6 py-4 text-xs text-slate-400">{v.driver}</td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const usage = storage?.volumes[v.name]
+                      return (
+                        <div className="font-mono text-xs text-amber-300">
+                          {usage?.bytes === undefined ? '—' : formatBytes(usage.bytes || 0)}
+                          {usage && <div className="text-[10px] text-slate-500 mt-0.5">{usage.ref_count} container{usage.ref_count === 1 ? '' : 's'}{usage.stack_names?.length ? ` · ${usage.stack_names.join(', ')}` : ''}</div>}
+                        </div>
+                      )
+                    })()}
+                  </td>
                   <td className="px-6 py-4 font-mono text-[11px] text-slate-400 truncate max-w-xs">{v.mountpoint}</td>
                   <td className="px-6 py-4 text-xs text-slate-400">{v.created_at?.substring(0, 10) || '—'}</td>
                   <td className="px-6 py-4 text-right">

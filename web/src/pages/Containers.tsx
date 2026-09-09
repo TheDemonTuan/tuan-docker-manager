@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { api } from '../api'
-import { ContainerInfo, ContainerDetail, ContainerStats } from '../types'
+import { ContainerInfo, ContainerDetail, ContainerStats, StorageSnapshot } from '../types'
 import {
   IconBox,
   IconPlay,
@@ -63,6 +63,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
   // Stats state
   const [stats, setStats] = useState<ContainerStats | null>(null)
   const [allStats, setAllStats] = useState<Record<string, ContainerStats>>({})
+  const [storage, setStorage] = useState<StorageSnapshot | null>(null)
 
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B'
@@ -83,6 +84,14 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
     }
   }
 
+  const loadStorage = async () => {
+    try {
+      setStorage(await api.getStorage())
+    } catch {
+      // Storage details are optional; keep container management usable.
+    }
+  }
+
   const loadAllStats = async () => {
     try {
       const res = await api.getAllContainerStats()
@@ -97,9 +106,11 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
   useEffect(() => {
     loadContainers()
     loadAllStats()
+    loadStorage()
     const timer = setInterval(() => {
       loadContainers()
       loadAllStats()
+      loadStorage()
     }, 4000)
     return () => clearInterval(timer)
   }, [])
@@ -355,6 +366,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                 const s = allStats[c.id] || allStats[c.id.slice(0, 12)]
                 return acc + (s?.memory_used || 0)
               }, 0)
+              const groupStorage = storage?.stacks[grpKey]
 
               return (
                 <div
@@ -400,6 +412,12 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                                 <span className="text-indigo-400">💾</span> {formatBytes(totalMem)} RAM
                               </span>
                             </>
+                          )}
+                          {groupStorage && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-amber-950/60 text-amber-300 border border-amber-800/60">
+                              Disk {formatBytes(groupStorage.writable_bytes + groupStorage.exclusive_volume_bytes)}
+                              {groupStorage.shared_volume_bytes > 0 ? ` + ${formatBytes(groupStorage.shared_volume_bytes)} shared` : ''}
+                            </span>
                           )}
                           {grpKey === 'docker-panel' && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono">
@@ -454,6 +472,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                             <th className="px-6 py-2.5">Service / Container</th>
                             <th className="px-6 py-2.5">Image</th>
                             <th className="px-6 py-2.5">Status</th>
+                            <th className="px-6 py-2.5">Writable</th>
                             <th className="px-6 py-2.5">Ports</th>
                             <th className="px-6 py-2.5 text-right">Actions</th>
                           </tr>
@@ -509,6 +528,12 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                                   >
                                     {c.status}
                                   </span>
+                                </td>
+
+                                <td className="px-6 py-3.5 font-mono text-xs text-amber-300">
+                                  {storage?.containers[c.id]?.writable_bytes === undefined
+                                    ? <span className="text-slate-500">—</span>
+                                    : formatBytes(storage.containers[c.id].writable_bytes || 0)}
                                 </td>
 
                                 <td className="px-6 py-3.5">
@@ -612,6 +637,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                   <th className="px-6 py-3">Stack / Project</th>
                   <th className="px-6 py-3">Image</th>
                   <th className="px-6 py-3">State</th>
+                  <th className="px-6 py-3">Writable</th>
                   <th className="px-6 py-3">Ports</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
@@ -619,7 +645,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
               <tbody className="divide-y divide-slate-800/60 text-sm">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                    <td colSpan={7} className="px-6 py-8 text-center text-slate-400">
                       No containers found matching criteria.
                     </td>
                   </tr>
@@ -675,6 +701,12 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                           >
                             {c.status}
                           </span>
+                        </td>
+
+                        <td className="px-6 py-4 font-mono text-xs text-amber-300">
+                          {storage?.containers[c.id]?.writable_bytes === undefined
+                            ? <span className="text-slate-500">—</span>
+                            : formatBytes(storage.containers[c.id].writable_bytes || 0)}
                         </td>
 
                         <td className="px-6 py-4">

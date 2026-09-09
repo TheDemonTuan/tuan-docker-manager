@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"docker-panel/internal/compose"
 	"docker-panel/internal/docker"
@@ -25,6 +26,9 @@ type AgentHandler struct {
 	gpuColl      *gpu.Collector
 	composeRun   *compose.Runner
 	version      string
+	storageMu    sync.Mutex
+	storageCache *models.StorageSnapshot
+	storageAt    time.Time
 }
 
 func NewAgentHandler(
@@ -51,6 +55,7 @@ func (h *AgentHandler) Router() http.Handler {
 	// Containers
 	mux.HandleFunc("POST /actions/containers/list", h.handleListContainers)
 	mux.HandleFunc("POST /actions/containers/inspect", h.handleInspectContainer)
+	mux.HandleFunc("POST /actions/storage/snapshot", h.handleStorageSnapshot)
 	mux.HandleFunc("POST /actions/containers/action", h.handleContainerAction)
 	mux.HandleFunc("GET /actions/containers/logs", h.handleContainerLogs)
 	mux.HandleFunc("POST /actions/containers/stats", h.handleContainerStats)
@@ -130,6 +135,118 @@ func (h *AgentHandler) handleListContainers(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, ListContainersResponse{Containers: containers})
 }
 
+func (h *AgentHandler) handleStorageSnapshot(w http.ResponseWriter, r *http.Request) {
+	h.storageMu.Lock()
+	defer h.storageMu.Unlock()
+	if h.storageCache != nil && time.Since(h.storageAt) < time.Minute {
+		writeJSON(w, http.StatusOK, StorageSnapshotResponse{Storage: h.storageCache})
+		return
+	}
+
+	containers, err := h.dockerClient.ListContainers(r.Context(), true)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	volumes, err := h.dockerClient.ListVolumes(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	volumeUsage, usageErr := h.dockerClient.VolumeUsage(r.Context())
+
+	snapshot := &models.StorageSnapshot{
+		MeasuredAt: time.Now().UTC(),
+		Containers: make(map[string]models.ContainerStorage, len(containers)),
+		Volumes:    make(map[string]models.VolumeStorage, len(volumes)),
+		Stacks:     make(map[string]models.StackStorage),
+		Status:     "complete",
+		Scope:      "Docker Engine writable layers and volume data reported by docker system df. Image layers and bind mounts are not allocated to stacks.",
+	}
+	if usageErr != nil {
+		snapshot.Status = "partial"
+		snapshot.Scope = "Docker Engine writable layers. Volume size could not be measured: " + usageErr.Error()
+	}
+	for _, volume := range volumes {
+		size, ok := volumeUsage[volume.Name]
+		var bytes *int64
+		if ok && size >= 0 {
+			bytes = &size
+		} else {
+			snapshot.Status = "partial"
+			snapshot.Scope = "Docker Engine writable layers and available volume data from docker system df. At least one volume could not be measured."
+		}
+		snapshot.Volumes[volume.Name] = models.VolumeStorage{Bytes: bytes}
+	}
+	for _, container := range containers {
+		storage := models.ContainerStorage{WritableBytes: container.SizeRw, RootFSBytes: container.SizeRootFS}
+		for _, mount := range mustInspectMounts(r.Context(), h.dockerClient, container.ID) {
+			if mount.Type != "volume" || mount.Name == "" {
+				continue
+			}
+			storage.VolumeNames = append(storage.VolumeNames, mount.Name)
+			volume := snapshot.Volumes[mount.Name]
+			volume.RefCount++
+			if container.StackName != "" && !containsString(volume.StackNames, container.StackName) {
+				volume.StackNames = append(volume.StackNames, container.StackName)
+			}
+			snapshot.Volumes[mount.Name] = volume
+		}
+		snapshot.Containers[container.ID] = storage
+		if container.StackName == "" {
+			continue
+		}
+		stack := snapshot.Stacks[container.StackName]
+		if container.SizeRw == nil {
+			stack.Incomplete = true
+		} else {
+			stack.WritableBytes += *container.SizeRw
+		}
+		snapshot.Stacks[container.StackName] = stack
+	}
+	for name, volume := range snapshot.Volumes {
+		for _, stackName := range volume.StackNames {
+			stack := snapshot.Stacks[stackName]
+			stack.VolumeNames = append(stack.VolumeNames, name)
+			if volume.Bytes == nil {
+				stack.Incomplete = true
+			} else if volume.RefCount == 1 {
+				stack.ExclusiveVolumeBytes += *volume.Bytes
+			} else {
+				stack.SharedVolumeBytes += *volume.Bytes
+			}
+			snapshot.Stacks[stackName] = stack
+		}
+	}
+	h.storageCache = snapshot
+	h.storageAt = time.Now()
+	writeJSON(w, http.StatusOK, StorageSnapshotResponse{Storage: snapshot})
+}
+
+func normalizeStorageSize(value int64) *int64 {
+	if value < 0 {
+		return nil
+	}
+	return &value
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func mustInspectMounts(ctx context.Context, client *docker.Client, id string) []models.MountDetail {
+	detail, err := client.InspectContainer(ctx, id)
+	if err != nil || detail == nil {
+		return nil
+	}
+	return detail.Mounts
+}
+
 func (h *AgentHandler) handleInspectContainer(w http.ResponseWriter, r *http.Request) {
 	var req InspectContainerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
@@ -174,7 +291,15 @@ func (h *AgentHandler) handleContainerAction(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	h.invalidateStorageCache()
 	writeJSON(w, http.StatusOK, ActionResponse{Success: true, Message: "action completed successfully"})
+}
+
+func (h *AgentHandler) invalidateStorageCache() {
+	h.storageMu.Lock()
+	defer h.storageMu.Unlock()
+	h.storageCache = nil
+	h.storageAt = time.Time{}
 }
 
 func (h *AgentHandler) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +430,7 @@ func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Reques
 			})
 			return
 		}
+		h.invalidateStorageCache()
 		writeJSON(w, http.StatusOK, ComposeActionResponse{
 			Success: true,
 			Logs:    fmt.Sprintf("Stack %s deleted successfully\n%s", req.StackName, logs),
@@ -358,6 +484,7 @@ func (h *AgentHandler) handleComposeAction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	h.invalidateStorageCache()
 	writeJSON(w, http.StatusOK, ComposeActionResponse{
 		Success: true,
 		Logs:    logs,

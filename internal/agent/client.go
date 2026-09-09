@@ -98,6 +98,14 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*models.Conta
 	return resp.Container, nil
 }
 
+func (c *Client) StorageSnapshot(ctx context.Context) (*models.StorageSnapshot, error) {
+	var resp StorageSnapshotResponse
+	if err := c.doJSON(ctx, "POST", "http://agent/actions/storage/snapshot", struct{}{}, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Storage, nil
+}
+
 func (c *Client) ContainerAction(ctx context.Context, id string, action string, signal string) error {
 	var resp ActionResponse
 	if err := c.doJSON(ctx, "POST", "http://agent/actions/containers/action", ContainerActionRequest{

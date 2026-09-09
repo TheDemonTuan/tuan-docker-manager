@@ -21,6 +21,35 @@ export interface PortMapping {
   exposure: 'PUBLIC' | 'LOCALHOST' | 'INTERNAL'
 }
 
+export interface StorageSnapshot {
+  measured_at: string
+  status: 'complete' | 'partial'
+  scope: string
+  containers: Record<string, ContainerStorage>
+  volumes: Record<string, VolumeStorage>
+  stacks: Record<string, StackStorage>
+}
+
+export interface ContainerStorage {
+  writable_bytes?: number
+  root_fs_bytes?: number
+  volume_names?: string[]
+}
+
+export interface VolumeStorage {
+  bytes?: number
+  ref_count: number
+  stack_names?: string[]
+}
+
+export interface StackStorage {
+  writable_bytes: number
+  exclusive_volume_bytes: number
+  shared_volume_bytes: number
+  volume_names?: string[]
+  incomplete: boolean
+}
+
 export interface ContainerInfo {
   id: string
   names: string[]
@@ -37,6 +66,8 @@ export interface ContainerInfo {
   compose_file?: string
   working_dir?: string
   health?: string
+  size_rw?: number
+  size_root_fs?: number
 }
 
 export interface ContainerDetail extends ContainerInfo {
@@ -48,6 +79,7 @@ export interface ContainerDetail extends ContainerInfo {
   networks: string[]
   mounts: Array<{
     type: string
+    name?: string
     source: string
     destination: string
     mode: string

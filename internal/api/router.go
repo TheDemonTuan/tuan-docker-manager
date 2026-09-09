@@ -73,6 +73,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Dashboard
 	apiMux.HandleFunc("GET /api/v1/dashboard", s.handleDashboard)
+	apiMux.HandleFunc("GET /api/v1/storage", s.handleStorageSnapshot)
 
 	// Stacks
 	apiMux.HandleFunc("GET /api/v1/stacks", s.handleListStacks)

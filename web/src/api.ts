@@ -13,6 +13,7 @@ import {
   HostMetrics,
   GPUMetrics,
   Job,
+  StorageSnapshot,
   AuditLog,
   AlertRule,
   AlertEvent,
@@ -96,6 +97,9 @@ export const api = {
       method: 'POST',
     }),
   getStackPreview: (id: string) => request<any>(`/api/v1/stacks/${id}/preview`),
+
+  // Storage
+  getStorage: () => request<StorageSnapshot>('/api/v1/storage'),
 
   // Containers
   listContainers: (all = true, stack?: string) => {

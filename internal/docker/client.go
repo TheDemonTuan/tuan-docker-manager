@@ -95,9 +95,9 @@ func (c *Client) GetVersion(ctx context.Context) (map[string]any, error) {
 }
 
 func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.ContainerInfo, error) {
-	u := "http://docker/containers/json"
+	u := "http://docker/containers/json?size=1"
 	if all {
-		u += "?all=1"
+		u += "&all=1"
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -129,7 +129,9 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 			PublicPort  uint16 `json:"PublicPort"`
 			Type        string `json:"Type"`
 		} `json:"Ports"`
-		Labels map[string]string `json:"Labels"`
+		Labels     map[string]string `json:"Labels"`
+		SizeRw     *int64            `json:"SizeRw"`
+		SizeRootFS *int64            `json:"SizeRootFs"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&rawContainers); err != nil {
@@ -182,10 +184,19 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 			ServiceName: serviceName,
 			ComposeFile: composeFile,
 			WorkingDir:  workingDir,
+			SizeRw:      normalizeSize(raw.SizeRw),
+			SizeRootFS:  normalizeSize(raw.SizeRootFS),
 		})
 	}
 
 	return result, nil
+}
+
+func normalizeSize(value *int64) *int64 {
+	if value == nil || *value < 0 {
+		return nil
+	}
+	return value
 }
 
 func (c *Client) InspectContainer(ctx context.Context, id string) (*models.ContainerDetail, error) {
@@ -298,6 +309,7 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*models.Conta
 	for _, m := range raw.Mounts {
 		detail.Mounts = append(detail.Mounts, models.MountDetail{
 			Type:        m.Type,
+			Name:        m.Name,
 			Source:      m.Source,
 			Destination: m.Destination,
 			Mode:        m.Mode,
@@ -671,6 +683,36 @@ func (c *Client) PruneImages(ctx context.Context) (*models.PruneResult, error) {
 		ImagesDeleted:  deleted,
 		SpaceReclaimed: raw.SpaceReclaimed,
 	}, nil
+}
+
+func (c *Client) VolumeUsage(ctx context.Context) (map[string]int64, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://docker/system/df", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("docker system df failed (%d): %s", resp.StatusCode, string(body))
+	}
+	var raw struct {
+		Volumes []struct {
+			Name string `json:"Name"`
+			Size int64  `json:"Size"`
+		} `json:"Volumes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+	usage := make(map[string]int64, len(raw.Volumes))
+	for _, volume := range raw.Volumes {
+		usage[volume.Name] = volume.Size
+	}
+	return usage, nil
 }
 
 func (c *Client) ListVolumes(ctx context.Context) ([]models.VolumeInfo, error) {
