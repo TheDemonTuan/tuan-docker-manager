@@ -335,8 +335,8 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                   <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
                     <span>{stk.containers?.length || 0} containers</span>
                     {stkStorage && (
-                      <span className="font-mono text-[11px] text-amber-300">
-                        Disk {formatBytes(stkStorage.writable_bytes + stkStorage.exclusive_volume_bytes)}
+                      <span className="font-mono text-[11px] text-amber-300 font-medium">
+                        Disk {formatBytes(stkStorage.total_bytes > 0 ? stkStorage.total_bytes : stkStorage.writable_bytes + stkStorage.exclusive_volume_bytes)}
                       </span>
                     )}
                     {isRunning && stkCpu > 0 && (
@@ -444,15 +444,35 @@ export const Stacks: React.FC<StacksProps> = ({ selectedStackId, onClearSelected
                 return (
                   <div className="px-4 py-3 bg-amber-950/30 border-b border-amber-900/60 text-xs">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold text-amber-200">Storage measured {new Date(storage.measured_at).toLocaleTimeString()}</span>
-                      <span className="text-amber-400">{storage.status === 'partial' || current.incomplete ? 'Partial measurement' : 'Docker Engine measurement'}</span>
+                      <span className="font-semibold text-amber-200">
+                        Stack Disk Usage: <strong className="font-mono text-amber-300 text-sm">{formatBytes(current.total_bytes > 0 ? current.total_bytes : current.writable_bytes + current.exclusive_volume_bytes)}</strong>
+                      </span>
+                      <span className="text-amber-400 font-mono text-[11px]">{storage.status === 'partial' || current.incomplete ? 'Partial measurement' : 'Docker Engine snapshot'}</span>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 font-mono">
-                      <span className="text-slate-300">Writable <strong className="text-amber-300">{formatBytes(current.writable_bytes)}</strong></span>
-                      <span className="text-slate-300">Exclusive volumes <strong className="text-amber-300">{formatBytes(current.exclusive_volume_bytes)}</strong></span>
-                      <span className="text-slate-300">Shared volumes <strong className="text-amber-300">{formatBytes(current.shared_volume_bytes)}</strong></span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 font-mono">
+                      <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                        <span className="text-slate-400 block text-[10px] uppercase">Images</span>
+                        <strong className="text-amber-300">{formatBytes(current.image_bytes)}</strong>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                        <span className="text-slate-400 block text-[10px] uppercase">Volumes</span>
+                        <strong className="text-amber-300">{formatBytes(current.exclusive_volume_bytes)}</strong>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                        <span className="text-slate-400 block text-[10px] uppercase">Writable Layer</span>
+                        <strong className="text-amber-300">{formatBytes(current.writable_bytes)}</strong>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                        <span className="text-slate-400 block text-[10px] uppercase">Shared Volumes</span>
+                        <strong className="text-amber-300">{formatBytes(current.shared_volume_bytes)}</strong>
+                      </div>
                     </div>
-                    <p className="text-slate-500 mt-2">{storage.scope}</p>
+                    {current.volume_names && current.volume_names.length > 0 && (
+                      <div className="text-[11px] text-slate-400 mt-2 font-mono">
+                        Volumes: {current.volume_names.join(', ')}
+                      </div>
+                    )}
+                    <p className="text-slate-500 mt-1">{storage.scope}</p>
                   </div>
                 )
               })()}

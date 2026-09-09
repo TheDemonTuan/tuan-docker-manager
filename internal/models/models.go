@@ -114,8 +114,11 @@ type StorageSnapshot struct {
 }
 
 type ContainerStorage struct {
-	WritableBytes *int64   `json:"writable_bytes,omitempty"`
-	RootFSBytes   *int64   `json:"root_fs_bytes,omitempty"`
+	TotalBytes    int64    `json:"total_bytes"`
+	ImageBytes    int64    `json:"image_bytes"`
+	WritableBytes int64    `json:"writable_bytes"`
+	RootFSBytes   int64    `json:"root_fs_bytes"`
+	VolumeBytes   int64    `json:"volume_bytes"`
 	VolumeNames   []string `json:"volume_names,omitempty"`
 }
 
@@ -126,6 +129,8 @@ type VolumeStorage struct {
 }
 
 type StackStorage struct {
+	TotalBytes           int64    `json:"total_bytes"`
+	ImageBytes           int64    `json:"image_bytes"`
 	WritableBytes        int64    `json:"writable_bytes"`
 	ExclusiveVolumeBytes int64    `json:"exclusive_volume_bytes"`
 	SharedVolumeBytes    int64    `json:"shared_volume_bytes"`

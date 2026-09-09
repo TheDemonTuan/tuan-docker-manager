@@ -415,7 +415,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                           )}
                           {groupStorage && (
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-amber-950/60 text-amber-300 border border-amber-800/60">
-                              Disk {formatBytes(groupStorage.writable_bytes + groupStorage.exclusive_volume_bytes)}
+                              Disk {formatBytes(groupStorage.total_bytes > 0 ? groupStorage.total_bytes : groupStorage.writable_bytes + groupStorage.exclusive_volume_bytes)}
                               {groupStorage.shared_volume_bytes > 0 ? ` + ${formatBytes(groupStorage.shared_volume_bytes)} shared` : ''}
                             </span>
                           )}
@@ -472,7 +472,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                             <th className="px-6 py-2.5">Service / Container</th>
                             <th className="px-6 py-2.5">Image</th>
                             <th className="px-6 py-2.5">Status</th>
-                            <th className="px-6 py-2.5">Writable</th>
+                            <th className="px-6 py-2.5">Disk Size</th>
                             <th className="px-6 py-2.5">Ports</th>
                             <th className="px-6 py-2.5 text-right">Actions</th>
                           </tr>
@@ -530,10 +530,23 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                                   </span>
                                 </td>
 
-                                <td className="px-6 py-3.5 font-mono text-xs text-amber-300">
-                                  {storage?.containers[c.id]?.writable_bytes === undefined
-                                    ? <span className="text-slate-500">—</span>
-                                    : formatBytes(storage.containers[c.id].writable_bytes || 0)}
+                                <td className="px-6 py-3.5 font-mono text-xs">
+                                  {(() => {
+                                    const cStore = storage?.containers[c.id]
+                                    if (!cStore) return <span className="text-slate-500">—</span>
+                                    const total = cStore.total_bytes > 0 ? cStore.total_bytes : (cStore.root_fs_bytes || cStore.writable_bytes || 0)
+                                    return (
+                                      <div>
+                                        <span className="font-semibold text-amber-300">
+                                          {formatBytes(total)}
+                                        </span>
+                                        <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                                          {formatBytes(cStore.image_bytes || 0)} img &bull; {formatBytes(cStore.writable_bytes || 0)} rw
+                                          {cStore.volume_bytes > 0 ? ` &bull; ${formatBytes(cStore.volume_bytes)} vol` : ''}
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
                                 </td>
 
                                 <td className="px-6 py-3.5">
@@ -637,7 +650,7 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                   <th className="px-6 py-3">Stack / Project</th>
                   <th className="px-6 py-3">Image</th>
                   <th className="px-6 py-3">State</th>
-                  <th className="px-6 py-3">Writable</th>
+                  <th className="px-6 py-3">Disk Size</th>
                   <th className="px-6 py-3">Ports</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
@@ -703,10 +716,23 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                           </span>
                         </td>
 
-                        <td className="px-6 py-4 font-mono text-xs text-amber-300">
-                          {storage?.containers[c.id]?.writable_bytes === undefined
-                            ? <span className="text-slate-500">—</span>
-                            : formatBytes(storage.containers[c.id].writable_bytes || 0)}
+                        <td className="px-6 py-4 font-mono text-xs">
+                          {(() => {
+                            const cStore = storage?.containers[c.id]
+                            if (!cStore) return <span className="text-slate-500">—</span>
+                            const total = cStore.total_bytes > 0 ? cStore.total_bytes : (cStore.root_fs_bytes || cStore.writable_bytes || 0)
+                            return (
+                              <div>
+                                <span className="font-semibold text-amber-300">
+                                  {formatBytes(total)}
+                                </span>
+                                <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                                  {formatBytes(cStore.image_bytes || 0)} img &bull; {formatBytes(cStore.writable_bytes || 0)} rw
+                                  {cStore.volume_bytes > 0 ? ` &bull; ${formatBytes(cStore.volume_bytes)} vol` : ''}
+                                </div>
+                              </div>
+                            )
+                          })()}
                         </td>
 
                         <td className="px-6 py-4">
@@ -1036,6 +1062,25 @@ export const Containers: React.FC<ContainersProps> = ({ onNavigateStack }) => {
                     <div className="font-mono text-slate-200 mt-0.5">{detail.restart_policy || 'no'}</div>
                   </div>
                 </div>
+
+                {storage?.containers[detail.id] && (() => {
+                  const cStore = storage.containers[detail.id]
+                  return (
+                    <div className="p-3 bg-amber-950/20 rounded-lg border border-amber-900/40 space-y-1">
+                      <div className="font-semibold text-amber-200 flex items-center justify-between">
+                        <span>Container Disk Usage</span>
+                        <span className="font-mono text-sm text-amber-300">
+                          {formatBytes(cStore.total_bytes > 0 ? cStore.total_bytes : (cStore.root_fs_bytes || cStore.writable_bytes || 0))}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 font-mono text-[11px] text-slate-300 mt-1">
+                        <div><span className="text-slate-500">Image:</span> {formatBytes(cStore.image_bytes || 0)}</div>
+                        <div><span className="text-slate-500">Writable:</span> {formatBytes(cStore.writable_bytes || 0)}</div>
+                        <div><span className="text-slate-500">Volumes:</span> {formatBytes(cStore.volume_bytes || 0)}</div>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {detail.mounts && detail.mounts.length > 0 && (
                   <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 space-y-1.5">

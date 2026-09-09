@@ -31,8 +31,11 @@ export interface StorageSnapshot {
 }
 
 export interface ContainerStorage {
-  writable_bytes?: number
-  root_fs_bytes?: number
+  total_bytes: number
+  image_bytes: number
+  writable_bytes: number
+  root_fs_bytes: number
+  volume_bytes: number
   volume_names?: string[]
 }
 
@@ -43,6 +46,8 @@ export interface VolumeStorage {
 }
 
 export interface StackStorage {
+  total_bytes: number
+  image_bytes: number
   writable_bytes: number
   exclusive_volume_bytes: number
   shared_volume_bytes: number

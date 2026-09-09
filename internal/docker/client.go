@@ -95,9 +95,9 @@ func (c *Client) GetVersion(ctx context.Context) (map[string]any, error) {
 }
 
 func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.ContainerInfo, error) {
-	u := "http://docker/containers/json?size=1"
+	u := "http://docker/containers/json?size=true"
 	if all {
-		u += "&all=1"
+		u += "&all=true"
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -129,9 +129,10 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 			PublicPort  uint16 `json:"PublicPort"`
 			Type        string `json:"Type"`
 		} `json:"Ports"`
-		Labels     map[string]string `json:"Labels"`
-		SizeRw     *int64            `json:"SizeRw"`
-		SizeRootFS *int64            `json:"SizeRootFs"`
+		Labels        map[string]string `json:"Labels"`
+		SizeRw        *int64            `json:"SizeRw"`
+		SizeRootFS    *int64            `json:"SizeRootFs"`
+		SizeRootfsAlt *int64            `json:"SizeRootfs"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&rawContainers); err != nil {
@@ -140,6 +141,9 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]models.Contain
 
 	result := make([]models.ContainerInfo, 0, len(rawContainers))
 	for _, raw := range rawContainers {
+		if raw.SizeRootFS == nil && raw.SizeRootfsAlt != nil {
+			raw.SizeRootFS = raw.SizeRootfsAlt
+		}
 		ports := make([]models.PortMapping, 0, len(raw.Ports))
 		for _, p := range raw.Ports {
 			exp := "INTERNAL"
@@ -200,7 +204,7 @@ func normalizeSize(value *int64) *int64 {
 }
 
 func (c *Client) InspectContainer(ctx context.Context, id string) (*models.ContainerDetail, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://docker/containers/%s/json", id), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://docker/containers/%s/json?size=true", id), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -267,11 +271,18 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*models.Conta
 			Mode        string `json:"Mode"`
 			RW          bool   `json:"RW"`
 		} `json:"Mounts"`
-		Name string `json:"Name"`
+		Name          string `json:"Name"`
+		SizeRw        *int64 `json:"SizeRw"`
+		SizeRootFS    *int64 `json:"SizeRootFs"`
+		SizeRootfsAlt *int64 `json:"SizeRootfs"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, err
+	}
+
+	if raw.SizeRootFS == nil && raw.SizeRootfsAlt != nil {
+		raw.SizeRootFS = raw.SizeRootfsAlt
 	}
 
 	detail := &models.ContainerDetail{
@@ -286,6 +297,8 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*models.Conta
 			Labels:      raw.Config.Labels,
 			StackName:   raw.Config.Labels["com.docker.compose.project"],
 			ServiceName: raw.Config.Labels["com.docker.compose.service"],
+			SizeRw:      normalizeSize(raw.SizeRw),
+			SizeRootFS:  normalizeSize(raw.SizeRootFS),
 		},
 		StartedAt:     raw.State.StartedAt,
 		FinishedAt:    raw.State.FinishedAt,
@@ -701,8 +714,12 @@ func (c *Client) VolumeUsage(ctx context.Context) (map[string]int64, error) {
 	}
 	var raw struct {
 		Volumes []struct {
-			Name string `json:"Name"`
-			Size int64  `json:"Size"`
+			Name      string `json:"Name"`
+			Size      int64  `json:"Size"`
+			UsageData struct {
+				Size     int64 `json:"Size"`
+				RefCount int64 `json:"RefCount"`
+			} `json:"UsageData"`
 		} `json:"Volumes"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -710,7 +727,11 @@ func (c *Client) VolumeUsage(ctx context.Context) (map[string]int64, error) {
 	}
 	usage := make(map[string]int64, len(raw.Volumes))
 	for _, volume := range raw.Volumes {
-		usage[volume.Name] = volume.Size
+		s := volume.UsageData.Size
+		if s <= 0 && volume.Size > 0 {
+			s = volume.Size
+		}
+		usage[volume.Name] = s
 	}
 	return usage, nil
 }
